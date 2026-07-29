@@ -6,9 +6,22 @@ export const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// Attach JWT if present. TODO(Sprint 1): refresh-token flow + auth store.
+export const tokenStore = {
+  get access() {
+    return localStorage.getItem("access_token");
+  },
+  set(access: string, refresh: string) {
+    localStorage.setItem("access_token", access);
+    localStorage.setItem("refresh_token", refresh);
+  },
+  clear() {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+  },
+};
+
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("access_token");
+  const token = tokenStore.access;
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
