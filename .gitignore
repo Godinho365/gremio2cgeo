@@ -33,3 +33,6 @@ frontend/dev-dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# Referência local do template Tabler (usamos @tabler/core via npm)
+tabler-dev/
