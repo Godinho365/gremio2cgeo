@@ -3,13 +3,23 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from apps.accounts.api.views import MeView, SignupView, TenantTokenView, UserViewSet
-from apps.assets.api.views import AssetViewSet
+from apps.assets.api.views import (
+    AcquisitionViewSet,
+    AssetViewSet,
+    CategoryViewSet,
+    LocationViewSet,
+    SupplierViewSet,
+)
 
 app_name = "api"
 
 router = DefaultRouter(trailing_slash=False)
 router.register("users", UserViewSet, basename="user")
 router.register("assets", AssetViewSet, basename="asset")
+router.register("categories", CategoryViewSet, basename="category")
+router.register("locations", LocationViewSet, basename="location")
+router.register("suppliers", SupplierViewSet, basename="supplier")
+router.register("acquisitions", AcquisitionViewSet, basename="acquisition")
 
 urlpatterns = [
     path("auth/signup", SignupView.as_view(), name="signup"),

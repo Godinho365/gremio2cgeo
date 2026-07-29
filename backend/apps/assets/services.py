@@ -4,31 +4,76 @@ Views call this; it never touches HTTP. See docs/modulos/patrimonio.md.
 """
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from core import audit
+from core.context import get_current_tenant_id
 from core.exceptions import BusinessRuleError
 from core.services import BaseService
 
 from .models import Asset
 from .repositories import AssetRepository
 
+_MAX_TAG_RETRIES = 5
+
 
 class AssetService(BaseService):
     def __init__(self, repository: AssetRepository | None = None) -> None:
         self.repository = repository or AssetRepository()
 
+    def _next_tag(self, tenant_id: UUID) -> str:
+        """PAT-{year}-{seq} sequential per tenant/year (RN-A1).
+
+        TODO(concurrency): replace count-based seq with a per-tenant sequence
+        table; for now the unique constraint + retry loop guards collisions.
+        """
+        year = date.today().year
+        prefix = f"PAT-{year}-"
+        count = Asset.objects.filter(tenant_id=tenant_id, asset_tag__startswith=prefix).count()
+        return f"{prefix}{count + 1:06d}"
+
     @transaction.atomic
     def create_asset(
-        self, *, asset_tag: str, name: str, actor_id: UUID | None = None, **fields: object
+        self,
+        *,
+        name: str,
+        asset_tag: str | None = None,
+        actor_id: UUID | None = None,
+        **fields: object,
     ) -> Asset:
-        # RN-A1: asset_tag unique per tenant.
-        if self.repository.tag_exists(asset_tag):
-            raise BusinessRuleError(
-                f"asset_tag '{asset_tag}' já existe.", code="asset_tag_duplicate"
-            )
+        tenant_id = get_current_tenant_id()
+        if tenant_id is None:
+            raise BusinessRuleError("Sem tenant no contexto.", code="no_tenant")
+
+        # Explicit tag: must be unique (RN-A1).
+        if asset_tag:
+            if self.repository.tag_exists(asset_tag):
+                raise BusinessRuleError(
+                    f"asset_tag '{asset_tag}' já existe.", code="asset_tag_duplicate"
+                )
+            return self._persist(tenant_id, asset_tag, name, actor_id, fields)
+
+        # Auto-generated tag: retry on race against the unique constraint.
+        for _ in range(_MAX_TAG_RETRIES):
+            candidate = self._next_tag(tenant_id)
+            try:
+                with transaction.atomic():
+                    return self._persist(tenant_id, candidate, name, actor_id, fields)
+            except IntegrityError:
+                continue
+        raise BusinessRuleError("Não foi possível gerar asset_tag.", code="asset_tag_generation")
+
+    def _persist(
+        self,
+        tenant_id: UUID,
+        asset_tag: str,
+        name: str,
+        actor_id: UUID | None,
+        fields: dict[str, object],
+    ) -> Asset:
         asset = self.repository.create(asset_tag=asset_tag, name=name, **fields)
         audit.record(
             action="asset.created",
