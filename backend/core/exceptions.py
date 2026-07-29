@@ -20,7 +20,19 @@ class BusinessRuleError(Exception):
         super().__init__(message)
 
 
+class ConflictError(BusinessRuleError):
+    """Resource conflict (e.g. overlapping booking, RN-B1) -> 409."""
+
+    def __init__(self, message: str, code: str = "conflict") -> None:
+        super().__init__(message, code)
+
+
 def api_exception_handler(exc: Exception, context: dict[str, Any]) -> Response | None:
+    if isinstance(exc, ConflictError):
+        return Response(
+            {"error": {"code": exc.code, "message": exc.message}},
+            status=status.HTTP_409_CONFLICT,
+        )
     if isinstance(exc, BusinessRuleError):
         return Response(
             {"error": {"code": exc.code, "message": exc.message}},

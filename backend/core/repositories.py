@@ -35,7 +35,7 @@ class BaseRepository(Generic[M]):
         self._require_tenant()
         return self.model.objects.for_current_tenant().alive()
 
-    def get(self, pk: UUID) -> M:
+    def get(self, pk: UUID | str) -> M:
         return self.query().get(pk=pk)
 
     def all(self) -> models.QuerySet[M]:

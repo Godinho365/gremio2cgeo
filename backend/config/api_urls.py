@@ -10,6 +10,7 @@ from apps.assets.api.views import (
     LocationViewSet,
     SupplierViewSet,
 )
+from apps.scheduling.api.views import AvailabilityViewSet, BookingViewSet
 
 app_name = "api"
 
@@ -20,6 +21,8 @@ router.register("categories", CategoryViewSet, basename="category")
 router.register("locations", LocationViewSet, basename="location")
 router.register("suppliers", SupplierViewSet, basename="supplier")
 router.register("acquisitions", AcquisitionViewSet, basename="acquisition")
+router.register("availabilities", AvailabilityViewSet, basename="availability")
+router.register("bookings", BookingViewSet, basename="booking")
 
 urlpatterns = [
     path("auth/signup", SignupView.as_view(), name="signup"),

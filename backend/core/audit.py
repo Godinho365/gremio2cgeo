@@ -13,7 +13,7 @@ def record(
     action: str,
     entity_type: str,
     entity_id: UUID | None = None,
-    actor_id: UUID | None = None,
+    actor_id: UUID | str | None = None,
     diff: dict[str, Any] | None = None,
     ip: str | None = None,
 ) -> AuditLog:

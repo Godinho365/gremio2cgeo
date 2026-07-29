@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 
 import RequireAuth from "./auth/RequireAuth";
 import Layout from "./components/Layout";
+import AgendaPage from "./pages/AgendaPage";
 import AssetsPage from "./pages/AssetsPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
@@ -15,7 +16,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<DashboardPage />} />
           <Route path="patrimonio" element={<AssetsPage />} />
-          <Route path="agenda" element={<PlaceholderPage title="Agenda" />} />
+          <Route path="agenda" element={<AgendaPage />} />
           <Route path="inventario" element={<PlaceholderPage title="Inventário" />} />
         </Route>
       </Route>
