@@ -6,12 +6,14 @@ from rest_framework.response import Response
 
 from core.viewsets import TenantScopedViewSet
 
+from ..models import Asset
 from ..services import AssetService
 from .serializers import AssetCreateSerializer, AssetSerializer
 
 
 class AssetViewSet(TenantScopedViewSet):
     serializer_class = AssetSerializer
+    queryset = Asset.objects.none()  # for schema introspection; runtime uses get_queryset
     service = AssetService()
 
     def get_queryset(self):  # type: ignore[override]
