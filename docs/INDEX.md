@@ -43,8 +43,8 @@ modulos/
   inventario.md ............. 🟡  (Art.30 b)
   manutencao.md ............. ⛔  (Art.30 c)
   cautelas.md ............... ✅  (Art.30 d)
-  agenda.md ................. ⛔
-  reservas.md ............... ⛔
+  agenda.md ................. 🟡  (backend+UI reservas no Sprint 3)
+  reservas.md ............... 🟡  (fluxo reserva→aprovação→cancelamento)
   dashboard.md .............. ⛔
   relatorios.md ............. ⛔
 api/
