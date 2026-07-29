@@ -39,7 +39,7 @@ dominio/
   fluxos.md ................. ✅
 modulos/
   _template.md .............. ✅ (modelo)
-  patrimonio.md ............. 🟡  (Art.30 a)
+  patrimonio.md ............. ✅  (Art.30 a — backend+UI no Sprint 2)
   inventario.md ............. 🟡  (Art.30 b)
   manutencao.md ............. ⛔  (Art.30 c)
   cautelas.md ............... ✅  (Art.30 d)

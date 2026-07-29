@@ -8,7 +8,7 @@
 | Framework | React 18+ | ecossistema, PWA maduro |
 | Build | Vite | dev rápido |
 | Linguagem | TypeScript (strict) | segurança de tipos |
-| Estilo | Tailwind CSS | Mobile First rápido, consistente |
+| UI / Estilo | Tabler (`@tabler/core`, Bootstrap 5) + `@tabler/icons-react` | dashboard pronto, consistente; fonte em `tabler-dev/`. Substituiu o Tailwind no Sprint 2 |
 | Estado servidor | React Query (TanStack) | cache/sync de API |
 | PWA | Vite PWA plugin + Workbox | offline p/ inventário em campo |
 | Formulários | React Hook Form + Zod | validação client alinhada ao contrato |
