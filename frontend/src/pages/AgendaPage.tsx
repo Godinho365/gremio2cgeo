@@ -2,7 +2,6 @@ import ptBrLocale from "@fullcalendar/core/locales/pt-br";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
-import timeGridPlugin from "@fullcalendar/timegrid";
 import { useMemo, useState } from "react";
 
 import { useAuth } from "../auth/AuthContext";
@@ -18,24 +17,17 @@ const RED = "#d63939"; // ocupado (aprovada)
 const ORANGE = "#f76707"; // pendente
 const GREEN = "#2fb344"; // disponível
 
-const WEEKDAYS = [
-  "Segunda",
-  "Terça",
-  "Quarta",
-  "Quinta",
-  "Sexta",
-  "Sábado",
-  "Domingo",
-];
+const WEEKDAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 
 // backend weekday (0=Seg..6=Dom) -> FullCalendar (0=Dom..6=Sáb)
 const toFcDay = (w: number) => (w + 1) % 7;
 
-function toLocalInput(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(
-    d.getMinutes(),
-  )}`;
+const pad = (n: number) => String(n).padStart(2, "0");
+const dateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+function addDays(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return dateStr(d);
 }
 
 function BookingModal({
@@ -58,7 +50,12 @@ function BookingModal({
     e.preventDefault();
     setError(null);
     try {
-      await create.mutateAsync({ asset, start_at: start, end_at: end });
+      // datas inclusivas -> intervalo meio-aberto [start 00:00, (end+1) 00:00)
+      await create.mutateAsync({
+        asset,
+        start_at: `${start}T00:00:00`,
+        end_at: `${addDays(end, 1)}T00:00:00`,
+      });
       onClose();
     } catch (err) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } }).response
@@ -80,20 +77,20 @@ function BookingModal({
               <div className="modal-body">
                 {error && <div className="alert alert-danger">{error}</div>}
                 <div className="row">
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label required">Início</label>
+                  <div className="col-6 mb-3">
+                    <label className="form-label required">De</label>
                     <input
-                      type="datetime-local"
+                      type="date"
                       className="form-control"
                       value={start}
                       onChange={(e) => setStart(e.target.value)}
                       required
                     />
                   </div>
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label required">Término</label>
+                  <div className="col-6 mb-3">
+                    <label className="form-label required">Até</label>
                     <input
-                      type="datetime-local"
+                      type="date"
                       className="form-control"
                       value={end}
                       onChange={(e) => setEnd(e.target.value)}
@@ -122,16 +119,15 @@ function BookingModal({
 function AvailabilityModal({ asset, onClose }: { asset: string; onClose: () => void }) {
   const create = useCreateAvailability();
   const [weekday, setWeekday] = useState(0);
-  const [start, setStart] = useState("08:00");
-  const [end, setEnd] = useState("18:00");
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    // Dia inteiro disponível (sem horas).
     await create.mutateAsync({
       asset,
       weekday,
-      start_time: `${start}:00`,
-      end_time: `${end}:00`,
+      start_time: "00:00:00",
+      end_time: "23:59:59",
     });
     onClose();
   }
@@ -139,48 +135,26 @@ function AvailabilityModal({ asset, onClose }: { asset: string; onClose: () => v
   return (
     <>
       <div className="modal modal-blur show d-block" tabIndex={-1}>
-        <div className="modal-dialog modal-dialog-centered">
+        <div className="modal-dialog modal-dialog-centered modal-sm">
           <div className="modal-content">
             <div className="modal-header">
-              <h5 className="modal-title">Definir disponibilidade</h5>
+              <h5 className="modal-title">Dia disponível</h5>
               <button type="button" className="btn-close" onClick={onClose} />
             </div>
             <form onSubmit={submit}>
               <div className="modal-body">
-                <div className="mb-3">
-                  <label className="form-label">Dia da semana</label>
-                  <select
-                    className="form-select"
-                    value={weekday}
-                    onChange={(e) => setWeekday(Number(e.target.value))}
-                  >
-                    {WEEKDAYS.map((d, i) => (
-                      <option key={i} value={i}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="row">
-                  <div className="col-6 mb-2">
-                    <label className="form-label">Das</label>
-                    <input
-                      type="time"
-                      className="form-control"
-                      value={start}
-                      onChange={(e) => setStart(e.target.value)}
-                    />
-                  </div>
-                  <div className="col-6 mb-2">
-                    <label className="form-label">Até</label>
-                    <input
-                      type="time"
-                      className="form-control"
-                      value={end}
-                      onChange={(e) => setEnd(e.target.value)}
-                    />
-                  </div>
-                </div>
+                <label className="form-label">Dia da semana disponível para cautela</label>
+                <select
+                  className="form-select"
+                  value={weekday}
+                  onChange={(e) => setWeekday(Number(e.target.value))}
+                >
+                  {WEEKDAYS.map((d, i) => (
+                    <option key={i} value={i}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-link" onClick={onClose}>
@@ -218,13 +192,13 @@ export default function AgendaPage() {
         title: `${b.requester_name} (${b.status === "approved" ? "aprovada" : "pendente"})`,
         start: b.start_at,
         end: b.end_at,
+        allDay: true,
         backgroundColor: b.status === "approved" ? RED : ORANGE,
         borderColor: b.status === "approved" ? RED : ORANGE,
       }));
+    // verde = dias da semana disponíveis para cautelar (pinta a célula do dia)
     const green = (availabilities.data ?? []).map((a) => ({
       daysOfWeek: [toFcDay(a.weekday)],
-      startTime: a.start_time.slice(0, 5),
-      endTime: a.end_time.slice(0, 5),
       display: "background" as const,
       backgroundColor: GREEN,
     }));
@@ -250,8 +224,8 @@ export default function AgendaPage() {
           </div>
           <div className="col-auto ms-auto">
             {isManager && asset && (
-              <button className="btn btn-outline-success me-2" onClick={() => setShowAvail(true)}>
-                + Disponibilidade
+              <button className="btn btn-outline-success" onClick={() => setShowAvail(true)}>
+                + Dia disponível
               </button>
             )}
           </div>
@@ -280,36 +254,32 @@ export default function AgendaPage() {
             <div className="empty">
               <p className="empty-title">Selecione um bem</p>
               <p className="empty-subtitle text-secondary">
-                A agenda mostra em <strong>verde</strong> quando o bem pode ser cautelado e em{" "}
-                <strong>vermelho</strong> os períodos já ocupados.
+                A agenda mostra em <strong>verde</strong> os dias em que o bem pode ser cautelado e
+                em <strong>vermelho</strong> os dias já ocupados.
               </p>
             </div>
           )}
 
           {asset && (
             <FullCalendar
-              plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
-              initialView="timeGridWeek"
+              plugins={[dayGridPlugin, interactionPlugin]}
+              initialView="dayGridMonth"
               locale={ptBrLocale}
               headerToolbar={{
                 left: "prev,next today",
                 center: "title",
-                right: "dayGridMonth,timeGridWeek,timeGridDay",
+                right: "dayGridMonth,dayGridWeek",
               }}
-              height="70vh"
-              nowIndicator
+              height="72vh"
               selectable
-              selectMirror
               select={(info) =>
                 setReserve({
-                  start: toLocalInput(info.start),
-                  end: toLocalInput(info.end),
+                  start: dateStr(info.start),
+                  // FullCalendar entrega fim exclusivo; converto p/ dia inclusivo
+                  end: addDays(dateStr(info.end), -1),
                 })
               }
               events={events}
-              slotMinTime="06:00:00"
-              slotMaxTime="22:00:00"
-              allDaySlot={false}
             />
           )}
         </div>
