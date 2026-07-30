@@ -84,6 +84,20 @@ def test_cannot_reference_other_tenant_category(client: APIClient):
     assert resp.status_code == 400  # category not in tenant A's queryset
 
 
+def test_edit_asset_updates_status_and_name(client: APIClient):
+    tenant, admin = _org("edit")
+    client.force_authenticate(admin)
+    created = client.post("/api/assets", {"name": "Item"}, format="json").data
+    resp = client.patch(
+        f"/api/assets/{created['id']}",
+        {"name": "Item Renomeado", "status": "maintenance"},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    assert resp.data["name"] == "Item Renomeado"
+    assert resp.data["status"] == "maintenance"
+
+
 def test_qrcode_endpoint_returns_png(client: APIClient):
     tenant, admin = _org("qrorg")
     client.force_authenticate(admin)

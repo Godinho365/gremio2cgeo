@@ -78,6 +78,31 @@ class AssetSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "asset_tag", "status", "created_at"]
 
 
+class AssetUpdateSerializer(TenantRelationsMixin, serializers.ModelSerializer):
+    """Edição do bem — permite alterar a situação (status). asset_tag é imutável (RN-A1)."""
+
+    tenant_scoped_fields = {
+        "category": Category,
+        "location": Location,
+        "acquisition": Acquisition,
+    }
+
+    class Meta:
+        model = Asset
+        fields = [
+            "name",
+            "description",
+            "category",
+            "location",
+            "acquisition",
+            "status",
+            "condition",
+            "acquisition_value",
+            "protection_notes",
+            "is_bookable",
+        ]
+
+
 class AssetCreateSerializer(TenantRelationsMixin, serializers.ModelSerializer):
     # asset_tag optional: auto-generated (PAT-year-seq) when blank.
     asset_tag = serializers.CharField(required=False, allow_blank=True)

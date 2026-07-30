@@ -35,6 +35,8 @@ class UserService(BaseService):
         username: str,
         password: str,
         email: str = "",
+        nome_guerra: str = "",
+        posto_graduacao: str = "",
         role_codes: list[str] | None = None,
         tenant_id: UUID | None = None,
         actor_id: UUID | None = None,
@@ -43,7 +45,13 @@ class UserService(BaseService):
             raise BusinessRuleError("Nome de usuário já existe.", code="username_taken")
 
         try:
-            user = User(username=username, email=email, tenant_id=tenant_id)
+            user = User(
+                username=username,
+                email=email,
+                tenant_id=tenant_id,
+                nome_guerra=nome_guerra,
+                posto_graduacao=posto_graduacao,
+            )
             user.set_password(password)
             user.save()
         except IntegrityError as exc:  # pragma: no cover - defensive

@@ -23,6 +23,7 @@ from .serializers import (
     AcquisitionSerializer,
     AssetCreateSerializer,
     AssetSerializer,
+    AssetUpdateSerializer,
     CategorySerializer,
     LocationSerializer,
     SupplierSerializer,
@@ -89,6 +90,19 @@ class AssetViewSet(TenantScopedViewSet):
             **data,
         )
         return Response(AssetSerializer(asset).data, status=201)
+
+    @extend_schema(request=AssetUpdateSerializer, responses={200: AssetSerializer})
+    def update(self, request: Request, *args: object, **kwargs: object) -> Response:
+        partial = bool(kwargs.get("partial", False))
+        instance = self.get_object()
+        serializer = AssetUpdateSerializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(AssetSerializer(instance).data)
+
+    def partial_update(self, request: Request, *args: object, **kwargs: object) -> Response:
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
 
     @extend_schema(responses={200: OpenApiResponse(description="PNG do QR Code")})
     @action(detail=True, methods=["get"], url_path="qrcode")

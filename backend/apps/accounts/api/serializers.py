@@ -8,10 +8,21 @@ from ..models import RoleCode, User
 
 class UserSerializer(serializers.ModelSerializer):
     roles = serializers.SerializerMethodField()
+    display_name = serializers.CharField(read_only=True)
 
     class Meta:
         model = User
-        fields = ["id", "username", "email", "is_active", "roles", "date_joined"]
+        fields = [
+            "id",
+            "username",
+            "email",
+            "nome_guerra",
+            "posto_graduacao",
+            "display_name",
+            "is_active",
+            "roles",
+            "date_joined",
+        ]
         read_only_fields = fields
 
     def get_roles(self, obj: User) -> list[str]:
@@ -22,6 +33,10 @@ class UserCreateSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150)
     email = serializers.EmailField(required=False, allow_blank=True)
     password = serializers.CharField(write_only=True, min_length=8)
+    nome_guerra = serializers.CharField(max_length=60, required=False, allow_blank=True, default="")
+    posto_graduacao = serializers.CharField(
+        max_length=60, required=False, allow_blank=True, default=""
+    )
     role_codes = serializers.ListField(
         child=serializers.ChoiceField(choices=RoleCode.choices),
         required=False,

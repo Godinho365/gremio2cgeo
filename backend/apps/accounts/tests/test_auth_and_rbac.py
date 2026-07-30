@@ -57,6 +57,25 @@ def test_admin_can_create_user(client: APIClient):
     assert resp.data["roles"] == ["inventory"]
 
 
+def test_create_user_with_rank_and_war_name(client: APIClient):
+    tenant, admin = _make_org("rank")
+    client.force_authenticate(admin)
+    resp = client.post(
+        "/api/users",
+        {
+            "username": "sd_souza",
+            "password": "supersecret123",
+            "nome_guerra": "SOUZA",
+            "posto_graduacao": "Sd",
+            "role_codes": ["user"],
+        },
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    assert resp.data["nome_guerra"] == "SOUZA"
+    assert resp.data["display_name"] == "Sd SOUZA"
+
+
 def test_non_admin_cannot_create_user(client: APIClient):
     tenant, admin = _make_org("orgb")
     with use_tenant(tenant.id):

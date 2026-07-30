@@ -36,9 +36,17 @@ class User(AbstractUser):
         Tenant, on_delete=models.CASCADE, related_name="users", null=True, blank=True
     )
     roles = models.ManyToManyField(Role, related_name="users", blank=True)
+    # Contexto militar/policial (ver estatuto). Nome de guerra e posto/graduação.
+    nome_guerra = models.CharField(max_length=60, blank=True)
+    posto_graduacao = models.CharField(max_length=60, blank=True)
 
     class Meta:
         db_table = "user"
 
     def has_role(self, code: str) -> bool:
         return self.roles.filter(code=code).exists()
+
+    @property
+    def display_name(self) -> str:
+        parts = [p for p in (self.posto_graduacao, self.nome_guerra) if p]
+        return " ".join(parts) or self.username

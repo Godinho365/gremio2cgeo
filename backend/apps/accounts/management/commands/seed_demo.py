@@ -26,17 +26,22 @@ class Command(BaseCommand):
             self._print_credentials()
             return
 
-        tenant, _admin = OnboardingService().create_organization(
+        tenant, admin = OnboardingService().create_organization(
             org_name="Demo Org",
             admin_username=ADMIN[0],
             admin_password=ADMIN[1],
             admin_email="demo@exemplo.com",
         )
+        admin.nome_guerra = "SILVA"
+        admin.posto_graduacao = "Cap"
+        admin.save(update_fields=["nome_guerra", "posto_graduacao"])
         with use_tenant(tenant.id):
             UserService().create_user(
                 username=NORMAL[0],
                 password=NORMAL[1],
                 email="usuario@exemplo.com",
+                nome_guerra="SOUZA",
+                posto_graduacao="Sd",
                 role_codes=[RoleCode.USER],
                 tenant_id=tenant.id,
             )
