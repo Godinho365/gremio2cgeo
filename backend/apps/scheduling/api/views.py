@@ -25,8 +25,13 @@ def _is_manager(user) -> bool:
 
 class AvailabilityViewSet(TenantCrudViewSet):
     serializer_class = AvailabilitySerializer
-    permission_classes = [IsAuthenticated, HasAnyRole]
     required_roles = _MANAGE_ROLES
+
+    def get_permissions(self):  # type: ignore[override]
+        # read = qualquer autenticado (para ver o calendário); escrita = admin/diretor.
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), HasAnyRole()]
 
     def get_queryset(self):  # type: ignore[override]
         qs = super().get_queryset()

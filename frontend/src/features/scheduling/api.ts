@@ -27,10 +27,50 @@ export const BOOKING_STATUS: Record<Booking["status"], { label: string; cls: str
   completed: { label: "Concluída", cls: "bg-blue-lt" },
 };
 
-export function useBookings() {
+export function useBookings(asset?: string) {
   return useQuery({
-    queryKey: ["bookings"],
-    queryFn: async () => (await api.get<Paginated<Booking>>("/bookings")).data,
+    queryKey: ["bookings", asset ?? "all"],
+    queryFn: async () => {
+      const q = asset ? `?asset=${asset}` : "";
+      return (await api.get<Paginated<Booking>>(`/bookings${q}`)).data;
+    },
+  });
+}
+
+export interface Availability {
+  id: string;
+  asset: string;
+  weekday: number; // 0=Segunda … 6=Domingo (backend)
+  start_time: string; // "HH:MM:SS"
+  end_time: string;
+  slot_minutes: number;
+}
+
+export function useAvailabilities(asset?: string) {
+  return useQuery({
+    queryKey: ["availabilities", asset ?? "all"],
+    enabled: !!asset,
+    queryFn: async () => {
+      const q = asset ? `?asset=${asset}` : "";
+      return (await api.get<Paginated<Availability>>(`/availabilities${q}`)).data.results;
+    },
+  });
+}
+
+export interface NewAvailability {
+  asset: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+}
+
+export function useCreateAvailability() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: NewAvailability) =>
+      (await api.post<Availability>("/availabilities", payload)).data,
+    onSuccess: (_d, v) =>
+      qc.invalidateQueries({ queryKey: ["availabilities", v.asset] }),
   });
 }
 
