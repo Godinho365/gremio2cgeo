@@ -117,6 +117,10 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
     "ENUM_NAME_OVERRIDES": {
         "AssetConditionEnum": "apps.assets.models.AssetCondition",
+        "AssetStatusEnum": "apps.assets.models.AssetStatus",
+        "BookingStatusEnum": "apps.scheduling.models.BookingStatus",
+        "CustodyStatusEnum": "apps.custody.models.CustodyStatus",
+        "InventoryStatusEnum": "apps.inventory.models.InventoryStatus",
     },
 }
 
