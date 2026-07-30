@@ -34,7 +34,7 @@ class CustodyService(BaseService):
         self.repository = repository or CustodyRepository()
 
     @transaction.atomic
-    def issue_custody(
+    def request_custody(
         self,
         *,
         asset_id: UUID | str,
@@ -42,30 +42,10 @@ class CustodyService(BaseService):
         issued_by_id: UUID | str,
         due_at: datetime,
         condition_out: str,
-        holder_signature: bool,
-        issuer_signature: bool,
         booking_id: UUID | str | None = None,
         notes: str = "",
     ) -> Custody:
-        # RN-C1: cautela ativa exige as duas assinaturas.
-        if not (holder_signature and issuer_signature):
-            raise BusinessRuleError(
-                "A cautela exige a assinatura do associado e do diretor.",
-                code="missing_signature",
-            )
-
-        asset = Asset.objects.for_current_tenant().alive().select_for_update().get(pk=asset_id)
-        if asset.status not in _ISSUABLE_ASSET_STATUSES:
-            raise BusinessRuleError(
-                "Bem não está disponível para cautela.", code="asset_not_issuable"
-            )
-        # RN-C2: no máximo uma cautela aberta por bem.
-        if self.repository.has_open_for_asset(asset_id):
-            raise BusinessRuleError(
-                "Já existe uma cautela ativa para este bem.", code="custody_open"
-            )
-
-        now = timezone.now()
+        """Cria uma cautela SOLICITADA (pendente). Sem assinatura; aprovação em etapa própria."""
         custody = self.repository.create(
             asset_id=asset_id,
             booking_id=booking_id,
@@ -73,26 +53,70 @@ class CustodyService(BaseService):
             issued_by_id=issued_by_id,
             due_at=due_at,
             condition_out=condition_out,  # RN-C3
-            status=CustodyStatus.ACTIVE,
-            holder_signed_at=now,
-            issuer_signed_at=now,
+            status=CustodyStatus.PENDING,
             notes=notes,
         )
+        audit.record(
+            action="custody.requested",
+            entity_type="Custody",
+            entity_id=custody.id,
+            actor_id=issued_by_id,
+        )
+        return custody
+
+    @transaction.atomic
+    def approve_custody(self, *, custody_id: UUID | str, approver_id: UUID | str) -> Custody:
+        custody = self.repository.get(custody_id)
+        if custody.status != CustodyStatus.PENDING:
+            raise BusinessRuleError(
+                "Só cautelas solicitadas podem ser aprovadas.", code="not_pending"
+            )
+
+        assets = Asset.objects.for_current_tenant().alive().select_for_update()
+        asset = assets.get(pk=custody.asset_id)
+        if asset.status not in _ISSUABLE_ASSET_STATUSES:
+            raise BusinessRuleError(
+                "Bem não está disponível para cautela.", code="asset_not_issuable"
+            )
+        # RN-C2: no máximo uma cautela ativa por bem.
+        if self.repository.has_open_for_asset(custody.asset_id):
+            raise BusinessRuleError(
+                "Já existe uma cautela ativa para este bem.", code="custody_open"
+            )
+
+        custody.status = CustodyStatus.ACTIVE
+        custody.approved_by_id = approver_id
         custody.term_hash = self._term_hash(custody)
-        custody.save(update_fields=["term_hash", "updated_at"])
+        custody.save(update_fields=["status", "approved_by", "term_hash", "updated_at"])
 
         asset.status = AssetStatus.IN_USE
         asset.save(update_fields=["status", "updated_at"])
 
-        if booking_id:
-            Booking.objects.filter(pk=booking_id).update(status=BookingStatus.COMPLETED)
+        if custody.booking_id:
+            Booking.objects.filter(pk=custody.booking_id).update(status=BookingStatus.COMPLETED)
 
         audit.record(
-            action="custody.issued",
+            action="custody.approved",
             entity_type="Custody",
             entity_id=custody.id,
-            actor_id=issued_by_id,
-            diff={"asset": asset.asset_tag, "holder": str(holder_id)},
+            actor_id=approver_id,
+        )
+        return custody
+
+    @transaction.atomic
+    def reject_custody(self, *, custody_id: UUID | str, actor_id: UUID | str) -> Custody:
+        custody = self.repository.get(custody_id)
+        if custody.status != CustodyStatus.PENDING:
+            raise BusinessRuleError(
+                "Só cautelas solicitadas podem ser rejeitadas.", code="not_pending"
+            )
+        custody.status = CustodyStatus.REJECTED
+        custody.save(update_fields=["status", "updated_at"])
+        audit.record(
+            action="custody.rejected",
+            entity_type="Custody",
+            entity_id=custody.id,
+            actor_id=actor_id,
         )
         return custody
 

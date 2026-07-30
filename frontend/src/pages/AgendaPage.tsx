@@ -229,7 +229,7 @@ function BookingDetailModal({
               )}
               {isManager && booking.status === "approved" && (
                 <button className="btn btn-primary" onClick={() => onEmitCustody(booking)}>
-                  Emitir cautela
+                  Solicitar cautela
                 </button>
               )}
               {active && (

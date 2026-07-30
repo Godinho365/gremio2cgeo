@@ -40,24 +40,44 @@ class CustodyViewSet(TenantScopedViewSet):
 
     @extend_schema(request=CustodyIssueSerializer, responses={201: CustodySerializer})
     def create(self, request: Request, *args: object, **kwargs: object) -> Response:
-        if not _is_manager(request.user):
-            raise BusinessRuleError("Apenas Admin/Diretor emitem cautela.", code="forbidden")
+        # Qualquer autenticado solicita; a aprovação é do gestor.
         payload = CustodyIssueSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         data = payload.validated_data
         booking = data.get("booking")
-        custody = self.service.issue_custody(
+        custody = self.service.request_custody(
             asset_id=data["asset"].id,
             holder_id=data["holder"].id,
             issued_by_id=str(request.user.pk),
             due_at=data["due_at"],
             condition_out=data["condition_out"],
-            holder_signature=data["holder_signature"],
-            issuer_signature=data["issuer_signature"],
             booking_id=booking.id if booking else None,
             notes=data.get("notes", ""),
         )
         return Response(CustodySerializer(custody).data, status=201)
+
+    @extend_schema(responses={200: CustodySerializer})
+    @action(detail=True, methods=["post"])
+    def approve(self, request: Request, pk: str = "") -> Response:
+        if not _is_manager(request.user):
+            raise BusinessRuleError("Apenas Admin/Diretor aprovam cautela.", code="forbidden")
+        custody = self.service.approve_custody(custody_id=pk, approver_id=str(request.user.pk))
+        return Response(CustodySerializer(custody).data)
+
+    @extend_schema(responses={200: CustodySerializer})
+    @action(detail=True, methods=["post"])
+    def reject(self, request: Request, pk: str = "") -> Response:
+        if not _is_manager(request.user):
+            raise BusinessRuleError("Apenas Admin/Diretor rejeitam cautela.", code="forbidden")
+        custody = self.service.reject_custody(custody_id=pk, actor_id=str(request.user.pk))
+        return Response(CustodySerializer(custody).data)
+
+    def destroy(self, request: Request, *args: object, **kwargs: object) -> Response:
+        if not _is_manager(request.user):
+            raise BusinessRuleError("Apenas Admin/Diretor excluem cautela.", code="forbidden")
+        instance = self.get_object()
+        self.service.repository.soft_delete(instance)
+        return Response(status=204)
 
     @extend_schema(request=CustodyReturnSerializer, responses={200: CustodySerializer})
     @action(detail=True, methods=["post"], url_path="return")

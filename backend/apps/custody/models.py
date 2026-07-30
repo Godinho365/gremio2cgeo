@@ -13,7 +13,9 @@ from core.models import TenantScopedModel
 
 
 class CustodyStatus(models.TextChoices):
+    PENDING = "pending", "Solicitada"
     ACTIVE = "active", "Ativa"
+    REJECTED = "rejected", "Rejeitada"
     RETURNED = "returned", "Devolvida"
     OVERDUE = "overdue", "Atrasada"
     LOST = "lost", "Extraviada"
@@ -38,11 +40,15 @@ class Custody(TenantScopedModel):
     due_at = models.DateTimeField()
     condition_out = models.CharField(max_length=20, choices=AssetCondition.choices)
     status = models.CharField(
-        max_length=20, choices=CustodyStatus.choices, default=CustodyStatus.ACTIVE
+        max_length=20, choices=CustodyStatus.choices, default=CustodyStatus.PENDING
     )
-    # Simple electronic signatures: audit trail = timestamp + term hash (RN-C1).
-    holder_signed_at = models.DateTimeField(null=True, blank=True)
-    issuer_signed_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_custodies",
+    )
     term_hash = models.CharField(max_length=64, blank=True)
     notes = models.TextField(blank=True)
 

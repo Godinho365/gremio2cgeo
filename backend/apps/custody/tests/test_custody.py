@@ -1,4 +1,4 @@
-"""Sprint 4: cautelas (Art.30 d) — emissão assinada, devolução com inspeção, regras."""
+"""Sprint 4: cautelas (Art.30 d) — solicitar, aprovar/rejeitar/excluir, devolver."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -38,79 +38,94 @@ def _due():
     return (timezone.now() + timedelta(days=3)).isoformat()
 
 
-def _issue_payload(asset, holder, **over):
-    base = {
+def _payload(asset, holder):
+    return {
         "asset": str(asset.id),
         "holder": str(holder.pk),
         "due_at": _due(),
         "condition_out": "good",
-        "holder_signature": True,
-        "issuer_signature": True,
     }
-    base.update(over)
-    return base
 
 
-def test_issue_custody_sets_asset_in_use(client: APIClient):
+def test_request_custody_is_pending(client: APIClient):
     tenant, admin = _org("cu1")
     asset = _asset(tenant)
     client.force_authenticate(admin)
-    resp = client.post("/api/custodies", _issue_payload(asset, admin), format="json")
+    resp = client.post("/api/custodies", _payload(asset, admin), format="json")
     assert resp.status_code == 201, resp.data
+    assert resp.data["status"] == CustodyStatus.PENDING
+    asset.refresh_from_db()
+    assert asset.status == AssetStatus.AVAILABLE  # ainda não ocupa
+
+
+def test_approve_activates_and_sets_in_use(client: APIClient):
+    tenant, admin = _org("cu2")
+    asset = _asset(tenant)
+    client.force_authenticate(admin)
+    cid = client.post("/api/custodies", _payload(asset, admin), format="json").data["id"]
+    resp = client.post(f"/api/custodies/{cid}/approve")
+    assert resp.status_code == 200
     assert resp.data["status"] == CustodyStatus.ACTIVE
-    assert resp.data["term_hash"]  # termo com hash (trilha)
+    assert resp.data["term_hash"]
     asset.refresh_from_db()
     assert asset.status == AssetStatus.IN_USE
 
 
-def test_issue_requires_both_signatures(client: APIClient):
-    tenant, admin = _org("cu2")
-    asset = _asset(tenant)
-    client.force_authenticate(admin)
-    resp = client.post(
-        "/api/custodies",
-        _issue_payload(asset, admin, holder_signature=False),
-        format="json",
-    )
-    assert resp.status_code == 422  # RN-C1
-    assert resp.data["error"]["code"] == "missing_signature"
-
-
-def test_only_one_open_custody_per_asset(client: APIClient):
+def test_reject_custody(client: APIClient):
     tenant, admin = _org("cu3")
     asset = _asset(tenant)
     client.force_authenticate(admin)
-    first = client.post("/api/custodies", _issue_payload(asset, admin), format="json")
-    assert first.status_code == 201
-    # 2ª emissão barrada: bem já está em uso / com cautela aberta (RN-C2 + status).
-    resp = client.post("/api/custodies", _issue_payload(asset, admin), format="json")
-    assert resp.status_code == 422
-    assert resp.data["error"]["code"] in ("custody_open", "asset_not_issuable")
+    cid = client.post("/api/custodies", _payload(asset, admin), format="json").data["id"]
+    resp = client.post(f"/api/custodies/{cid}/reject")
+    assert resp.status_code == 200
+    assert resp.data["status"] == CustodyStatus.REJECTED
 
 
-def test_non_manager_cannot_issue(client: APIClient):
+def test_delete_custody_soft(client: APIClient):
     tenant, admin = _org("cu4")
+    asset = _asset(tenant)
+    client.force_authenticate(admin)
+    cid = client.post("/api/custodies", _payload(asset, admin), format="json").data["id"]
+    assert client.delete(f"/api/custodies/{cid}").status_code == 204
+    assert client.get("/api/custodies").data["count"] == 0
+
+
+def test_non_manager_cannot_approve(client: APIClient):
+    tenant, admin = _org("cu5")
     asset = _asset(tenant)
     with use_tenant(tenant.id):
         plain = UserService().create_user(
             username="plaincu", password="supersecret123",
             role_codes=[RoleCode.USER], tenant_id=tenant.id,
         )
+    # usuário comum pode solicitar
     client.force_authenticate(plain)
-    resp = client.post("/api/custodies", _issue_payload(asset, plain), format="json")
-    assert resp.status_code == 422
-    assert resp.data["error"]["code"] == "forbidden"
+    cid = client.post("/api/custodies", _payload(asset, plain), format="json").data["id"]
+    # mas não pode aprovar
+    assert client.post(f"/api/custodies/{cid}/approve").status_code == 422
 
 
-def test_return_ok_makes_asset_available(client: APIClient):
-    tenant, admin = _org("cu5")
+def test_only_one_active_per_asset(client: APIClient):
+    tenant, admin = _org("cu6")
     asset = _asset(tenant)
     client.force_authenticate(admin)
-    cid = client.post("/api/custodies", _issue_payload(asset, admin), format="json").data["id"]
+    c1 = client.post("/api/custodies", _payload(asset, admin), format="json").data["id"]
+    c2 = client.post("/api/custodies", _payload(asset, admin), format="json").data["id"]
+    assert client.post(f"/api/custodies/{c1}/approve").status_code == 200
+    # segunda aprovação barrada: bem em uso / cautela aberta (RN-C2)
+    resp = client.post(f"/api/custodies/{c2}/approve")
+    assert resp.status_code == 422
+    assert resp.data["error"]["code"] in ("custody_open", "asset_not_issuable")
+
+
+def test_return_ok_makes_available(client: APIClient):
+    tenant, admin = _org("cu7")
+    asset = _asset(tenant)
+    client.force_authenticate(admin)
+    cid = client.post("/api/custodies", _payload(asset, admin), format="json").data["id"]
+    client.post(f"/api/custodies/{cid}/approve")
     resp = client.post(
-        f"/api/custodies/{cid}/return",
-        {"condition_in": "good", "outcome": "ok"},
-        format="json",
+        f"/api/custodies/{cid}/return", {"condition_in": "good", "outcome": "ok"}, format="json"
     )
     assert resp.status_code == 200
     assert resp.data["status"] == CustodyStatus.RETURNED
@@ -118,54 +133,38 @@ def test_return_ok_makes_asset_available(client: APIClient):
     assert asset.status == AssetStatus.AVAILABLE
 
 
-def test_return_with_damage_sends_to_maintenance(client: APIClient):
-    tenant, admin = _org("cu6")
+def test_return_damage_to_maintenance(client: APIClient):
+    tenant, admin = _org("cu8")
     asset = _asset(tenant)
     client.force_authenticate(admin)
-    cid = client.post("/api/custodies", _issue_payload(asset, admin), format="json").data["id"]
-    resp = client.post(
-        f"/api/custodies/{cid}/return",
-        {"condition_in": "bad", "outcome": "damage"},
-        format="json",
+    cid = client.post("/api/custodies", _payload(asset, admin), format="json").data["id"]
+    client.post(f"/api/custodies/{cid}/approve")
+    client.post(
+        f"/api/custodies/{cid}/return", {"condition_in": "bad", "outcome": "damage"}, format="json"
     )
-    assert resp.status_code == 200
     asset.refresh_from_db()
     assert asset.status == AssetStatus.MAINTENANCE  # RN-C5
 
 
-def test_return_missing_marks_lost(client: APIClient):
-    tenant, admin = _org("cu7")
-    asset = _asset(tenant)
-    client.force_authenticate(admin)
-    cid = client.post("/api/custodies", _issue_payload(asset, admin), format="json").data["id"]
-    resp = client.post(
-        f"/api/custodies/{cid}/return",
-        {"condition_in": "regular", "outcome": "missing"},
-        format="json",
-    )
-    assert resp.data["status"] == CustodyStatus.LOST  # RN-C5
-
-
 def test_mark_overdue_job(client: APIClient):
-    tenant, admin = _org("cu8")
+    tenant, admin = _org("cu9")
     asset = _asset(tenant)
     with use_tenant(tenant.id):
         custody = Custody.objects.create(
             tenant_id=tenant.id, asset=asset, holder=admin, issued_by=admin,
             due_at=timezone.now() - timedelta(hours=1), condition_out="good",
-            status=CustodyStatus.ACTIVE, holder_signed_at=timezone.now(),
-            issuer_signed_at=timezone.now(),
+            status=CustodyStatus.ACTIVE,
         )
     assert mark_overdue_custodies() == 1  # RN-C4
     custody.refresh_from_db()
     assert custody.status == CustodyStatus.OVERDUE
 
 
-def test_custodies_are_tenant_scoped(client: APIClient):
+def test_custodies_tenant_scoped(client: APIClient):
     ta, admin_a = _org("cuA")
     tb, admin_b = _org("cuB")
     asset_b = _asset(tb, "BemB")
     client.force_authenticate(admin_b)
-    client.post("/api/custodies", _issue_payload(asset_b, admin_b), format="json")
+    client.post("/api/custodies", _payload(asset_b, admin_b), format="json")
     client.force_authenticate(admin_a)
     assert client.get("/api/custodies").data["count"] == 0

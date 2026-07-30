@@ -13,7 +13,7 @@ export interface Custody {
   issued_at: string;
   due_at: string;
   condition_out: string;
-  status: "active" | "returned" | "overdue" | "lost";
+  status: "pending" | "active" | "rejected" | "returned" | "overdue" | "lost";
   term_hash: string;
   notes: string;
 }
@@ -24,7 +24,9 @@ interface Paginated<T> {
 }
 
 export const CUSTODY_STATUS: Record<Custody["status"], { label: string; cls: string }> = {
+  pending: { label: "Solicitada", cls: "bg-yellow-lt" },
   active: { label: "Ativa", cls: "bg-green-lt" },
+  rejected: { label: "Rejeitada", cls: "bg-secondary-lt" },
   returned: { label: "Devolvida", cls: "bg-secondary-lt" },
   overdue: { label: "Atrasada", cls: "bg-red-lt" },
   lost: { label: "Extraviada", cls: "bg-red-lt" },
@@ -46,8 +48,6 @@ export interface IssueCustody {
   booking?: string | null;
   due_at: string;
   condition_out: string;
-  holder_signature: boolean;
-  issuer_signature: boolean;
   notes?: string;
 }
 
@@ -61,6 +61,31 @@ export function useIssueCustody() {
       qc.invalidateQueries({ queryKey: ["assets"] });
       qc.invalidateQueries({ queryKey: ["bookings"] });
     },
+  });
+}
+
+function useCustodyAction(action: "approve" | "reject") {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post<Custody>(`/custodies/${id}/${action}`)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["custodies"] });
+      qc.invalidateQueries({ queryKey: ["assets"] });
+    },
+  });
+}
+
+export const useApproveCustody = () => useCustodyAction("approve");
+export const useRejectCustody = () => useCustodyAction("reject");
+
+export function useDeleteCustody() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/custodies/${id}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["custodies"] }),
   });
 }
 

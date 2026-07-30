@@ -1,13 +1,18 @@
+import { IconPlus } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { useAuth } from "../auth/AuthContext";
+import IssueCustodyModal from "../components/IssueCustodyModal";
 import { CONDITIONS } from "../features/assets/api";
 import {
   CUSTODY_STATUS,
   type Custody,
   OUTCOMES,
   type ReturnCustody,
+  useApproveCustody,
   useCustodies,
+  useDeleteCustody,
+  useRejectCustody,
   useReturnCustody,
 } from "../features/custody/api";
 
@@ -96,13 +101,27 @@ function ReturnModal({ custody, onClose }: { custody: Custody; onClose: () => vo
 export default function CustodyPage() {
   const { user } = useAuth();
   const { data, isLoading } = useCustodies();
+  const approve = useApproveCustody();
+  const reject = useRejectCustody();
+  const del = useDeleteCustody();
   const [returning, setReturning] = useState<Custody | null>(null);
+  const [showNew, setShowNew] = useState(false);
   const isManager = user?.roles.some((r) => r === "admin" || r === "director") ?? false;
 
   return (
     <>
       <div className="page-header">
-        <h2 className="page-title">Cautelas</h2>
+        <div className="row align-items-center">
+          <div className="col">
+            <h2 className="page-title">Cautelas</h2>
+          </div>
+          <div className="col-auto ms-auto">
+            <button className="btn btn-primary" onClick={() => setShowNew(true)}>
+              <IconPlus size={18} className="me-1" />
+              Nova cautela
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="card mt-3">
@@ -112,7 +131,7 @@ export default function CustodyPage() {
               <tr>
                 <th>Bem</th>
                 <th>Responsável</th>
-                <th>Emitida</th>
+                <th>Solicitada</th>
                 <th>Devolver até</th>
                 <th>Situação</th>
                 <th className="w-1" />
@@ -129,7 +148,7 @@ export default function CustodyPage() {
               {!isLoading && data?.results.length === 0 && (
                 <tr>
                   <td colSpan={6} className="text-secondary">
-                    Nenhuma cautela emitida. Emita a partir de uma reserva aprovada na Agenda.
+                    Nenhuma cautela. Clique em “Nova cautela” para solicitar.
                   </td>
                 </tr>
               )}
@@ -149,13 +168,41 @@ export default function CustodyPage() {
                       <span className={`badge ${st.cls}`}>{st.label}</span>
                     </td>
                     <td>
-                      {isManager && open && (
-                        <button
-                          className="btn btn-sm btn-primary"
-                          onClick={() => setReturning(c)}
-                        >
-                          Devolver
-                        </button>
+                      {isManager && (
+                        <div className="btn-list flex-nowrap justify-content-end">
+                          {c.status === "pending" && (
+                            <>
+                              <button
+                                className="btn btn-sm btn-success"
+                                onClick={() => approve.mutate(c.id)}
+                              >
+                                Aprovar
+                              </button>
+                              <button
+                                className="btn btn-sm btn-ghost-secondary"
+                                onClick={() => reject.mutate(c.id)}
+                              >
+                                Rejeitar
+                              </button>
+                            </>
+                          )}
+                          {open && (
+                            <button
+                              className="btn btn-sm btn-primary"
+                              onClick={() => setReturning(c)}
+                            >
+                              Devolver
+                            </button>
+                          )}
+                          <button
+                            className="btn btn-sm btn-ghost-danger"
+                            onClick={() => {
+                              if (confirm("Excluir esta cautela?")) del.mutate(c.id);
+                            }}
+                          >
+                            Excluir
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -167,6 +214,7 @@ export default function CustodyPage() {
       </div>
 
       {returning && <ReturnModal custody={returning} onClose={() => setReturning(null)} />}
+      {showNew && <IssueCustodyModal onClose={() => setShowNew(false)} />}
     </>
   );
 }

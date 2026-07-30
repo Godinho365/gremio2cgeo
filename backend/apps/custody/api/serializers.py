@@ -47,8 +47,6 @@ class CustodyIssueSerializer(serializers.Serializer):
     )
     due_at = serializers.DateTimeField()
     condition_out = serializers.ChoiceField(choices=AssetCondition.choices)
-    holder_signature = serializers.BooleanField()
-    issuer_signature = serializers.BooleanField()
     notes = serializers.CharField(required=False, allow_blank=True, default="")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:

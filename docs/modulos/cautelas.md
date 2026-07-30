@@ -34,13 +34,17 @@ Controlar a entrega de um bem a um associado sob **termo de responsabilidade ass
 ### UC-C4 — Consultar histórico de responsabilidade de um bem/pessoa
 - **Ator**: Diretor, Auditor. Lista todas as cautelas por `asset` ou por `holder`.
 
+## Fluxo (sem assinatura)
+`solicitada (pending) → aprovada (active) / rejeitada` · `ativa → devolvida` · pode ser `excluída` (soft delete).
+A cautela é **solicitada** por qualquer usuário e **aprovada/rejeitada** pelo gestor (Admin/Diretor). Não há assinatura eletrônica no MVP — o controle é pela aprovação + AuditLog (quem aprovou/rejeitou).
+
 ## Regras de negócio (invariantes)
-1. Cautela **exige as duas assinaturas** (holder + issuer) para ser válida/ativa.
-2. `condition_out` obrigatório na emissão; `condition_in` obrigatório na devolução.
-3. Um bem tem **no máximo uma** cautela `ativa` por vez.
-4. Não emitir cautela para bem `manutenção`/`baixado`.
-5. Toda transição gera AuditLog; termos assinados são imutáveis (versionar se refizer).
-6. Se veio de `Booking`, a cautela referencia `booking_id` e conclui a reserva.
+1. Emissão cria cautela **solicitada (pending)**; só o gestor **aprova/rejeita/exclui**.
+2. `condition_out` obrigatório na solicitação; `condition_in` obrigatório na devolução.
+3. Ao **aprovar**: bem deve estar disponível/reservado e ter **no máximo uma** cautela ativa (RN-C2); então vira `em_uso`.
+4. `due_at < now` + `ativa` → `atrasada` (job Celery, RN-C4).
+5. Inspeção com dano → manutenção; faltante → extraviada (RN-C5).
+6. Se veio de `Booking`, a cautela referencia `booking_id` e conclui a reserva na aprovação. Toda transição gera AuditLog.
 
 ## Endpoints (contrato)
 | Método | Path | Ação |
