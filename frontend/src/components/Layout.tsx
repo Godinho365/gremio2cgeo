@@ -2,6 +2,7 @@ import {
   IconBox,
   IconCalendarEvent,
   IconClipboardCheck,
+  IconFileText,
   IconLayoutDashboard,
   IconLogout,
 } from "@tabler/icons-react";
@@ -13,6 +14,7 @@ const NAV = [
   { to: "/", label: "Dashboard", icon: IconLayoutDashboard, end: true },
   { to: "/patrimonio", label: "Patrimônio", icon: IconBox, end: false },
   { to: "/agenda", label: "Agenda", icon: IconCalendarEvent, end: false },
+  { to: "/cautelas", label: "Cautelas", icon: IconFileText, end: false },
   { to: "/inventario", label: "Inventário", icon: IconClipboardCheck, end: false },
 ];
 

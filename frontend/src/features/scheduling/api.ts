@@ -7,6 +7,7 @@ export interface Booking {
   asset: string;
   asset_tag: string;
   asset_name: string;
+  requester: string;
   requester_name: string;
   start_at: string;
   end_at: string;

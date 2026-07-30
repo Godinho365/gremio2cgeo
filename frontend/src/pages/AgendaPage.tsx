@@ -5,10 +5,14 @@ import FullCalendar from "@fullcalendar/react";
 import { useMemo, useState } from "react";
 
 import { useAuth } from "../auth/AuthContext";
+import IssueCustodyModal from "../components/IssueCustodyModal";
 import { useAssets } from "../features/assets/api";
 import {
+  type Booking,
+  useApproveBooking,
   useAvailabilities,
   useBookings,
+  useCancelBooking,
   useCreateAvailability,
   useCreateBooking,
 } from "../features/scheduling/api";
@@ -173,6 +177,80 @@ function AvailabilityModal({ asset, onClose }: { asset: string; onClose: () => v
   );
 }
 
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("pt-BR");
+}
+
+function BookingDetailModal({
+  booking,
+  isManager,
+  onEmitCustody,
+  onClose,
+}: {
+  booking: Booking;
+  isManager: boolean;
+  onEmitCustody: (b: Booking) => void;
+  onClose: () => void;
+}) {
+  const approve = useApproveBooking();
+  const cancel = useCancelBooking();
+  const active = booking.status === "pending" || booking.status === "approved";
+
+  return (
+    <>
+      <div className="modal modal-blur show d-block" tabIndex={-1}>
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Reserva — {booking.asset_name}</h5>
+              <button type="button" className="btn-close" onClick={onClose} />
+            </div>
+            <div className="modal-body">
+              <dl className="row mb-0">
+                <dt className="col-4">Solicitante</dt>
+                <dd className="col-8">{booking.requester_name}</dd>
+                <dt className="col-4">Período</dt>
+                <dd className="col-8">
+                  {fmtDate(booking.start_at)} — {fmtDate(booking.end_at)}
+                </dd>
+                <dt className="col-4">Situação</dt>
+                <dd className="col-8">{booking.status}</dd>
+              </dl>
+            </div>
+            <div className="modal-footer">
+              {isManager && booking.status === "pending" && (
+                <button
+                  className="btn btn-success"
+                  onClick={() => approve.mutate(booking.id, { onSuccess: onClose })}
+                >
+                  Aprovar
+                </button>
+              )}
+              {isManager && booking.status === "approved" && (
+                <button className="btn btn-primary" onClick={() => onEmitCustody(booking)}>
+                  Emitir cautela
+                </button>
+              )}
+              {active && (
+                <button
+                  className="btn btn-ghost-danger"
+                  onClick={() => cancel.mutate(booking.id, { onSuccess: onClose })}
+                >
+                  Cancelar reserva
+                </button>
+              )}
+              <button className="btn btn-link" onClick={onClose}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
 export default function AgendaPage() {
   const { user } = useAuth();
   const assets = useAssets();
@@ -181,8 +259,12 @@ export default function AgendaPage() {
   const availabilities = useAvailabilities(asset || undefined);
   const [reserve, setReserve] = useState<{ start: string; end: string } | null>(null);
   const [showAvail, setShowAvail] = useState(false);
+  const [detail, setDetail] = useState<Booking | null>(null);
+  const [custodyFor, setCustodyFor] = useState<Booking | null>(null);
 
   const isManager = user?.roles.some((r) => r === "admin" || r === "director") ?? false;
+  const assetLabel =
+    assets.data?.results.find((a) => a.id === asset)?.name ?? "";
 
   const events = useMemo(() => {
     const busy = (bookings.data?.results ?? [])
@@ -279,6 +361,10 @@ export default function AgendaPage() {
                   end: addDays(dateStr(info.end), -1),
                 })
               }
+              eventClick={(info) => {
+                const b = bookings.data?.results.find((x) => x.id === info.event.id);
+                if (b) setDetail(b);
+              }}
               events={events}
             />
           )}
@@ -295,6 +381,26 @@ export default function AgendaPage() {
       )}
       {showAvail && asset && (
         <AvailabilityModal asset={asset} onClose={() => setShowAvail(false)} />
+      )}
+      {detail && (
+        <BookingDetailModal
+          booking={detail}
+          isManager={isManager}
+          onEmitCustody={(b) => {
+            setDetail(null);
+            setCustodyFor(b);
+          }}
+          onClose={() => setDetail(null)}
+        />
+      )}
+      {custodyFor && (
+        <IssueCustodyModal
+          asset={custodyFor.asset}
+          assetLabel={assetLabel}
+          defaultHolder={custodyFor.requester}
+          bookingId={custodyFor.id}
+          onClose={() => setCustodyFor(null)}
+        />
       )}
     </>
   );
