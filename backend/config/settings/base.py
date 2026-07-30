@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.assets",
     "apps.scheduling",
+    "apps.custody",
 ]
 
 MIDDLEWARE = [
@@ -113,6 +114,9 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "ERP Patrimonial SaaS multi-tenant",
     "VERSION": "0.1.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    "ENUM_NAME_OVERRIDES": {
+        "AssetConditionEnum": "apps.assets.models.AssetCondition",
+    },
 }
 
 # --- Celery ---
