@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import IssueCustodyModal from "../components/IssueCustodyModal";
 import { useAssets } from "../features/assets/api";
+import { useCustodies } from "../features/custody/api";
 import {
   type Booking,
   useApproveBooking,
@@ -257,6 +258,7 @@ export default function AgendaPage() {
   const [asset, setAsset] = useState("");
   const bookings = useBookings(asset || undefined);
   const availabilities = useAvailabilities(asset || undefined);
+  const custodies = useCustodies(asset || undefined);
   const [reserve, setReserve] = useState<{ start: string; end: string } | null>(null);
   const [showAvail, setShowAvail] = useState(false);
   const [detail, setDetail] = useState<Booking | null>(null);
@@ -278,14 +280,26 @@ export default function AgendaPage() {
         backgroundColor: b.status === "approved" ? RED : ORANGE,
         borderColor: b.status === "approved" ? RED : ORANGE,
       }));
+    // cautelas ativas/atrasadas = bem em uso (vermelho, do dia da emissão ao prazo)
+    const custodied = (custodies.data?.results ?? [])
+      .filter((c) => c.status === "active" || c.status === "overdue")
+      .map((c) => ({
+        id: `custody-${c.id}`,
+        title: `Cautelado — ${c.holder_name}`,
+        start: c.issued_at,
+        end: addDays(c.due_at.slice(0, 10), 1),
+        allDay: true,
+        backgroundColor: RED,
+        borderColor: RED,
+      }));
     // verde = dias da semana disponíveis para cautelar (pinta a célula do dia)
     const green = (availabilities.data ?? []).map((a) => ({
       daysOfWeek: [toFcDay(a.weekday)],
       display: "background" as const,
       backgroundColor: GREEN,
     }));
-    return [...green, ...busy];
-  }, [bookings.data, availabilities.data]);
+    return [...green, ...busy, ...custodied];
+  }, [bookings.data, availabilities.data, custodies.data]);
 
   return (
     <>

@@ -6,6 +6,9 @@ export interface CurrentUser {
   id: string;
   username: string;
   email: string;
+  display_name?: string;
+  nome_guerra?: string;
+  posto_graduacao?: string;
   roles: string[];
 }
 

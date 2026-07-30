@@ -30,10 +30,13 @@ export const CUSTODY_STATUS: Record<Custody["status"], { label: string; cls: str
   lost: { label: "Extraviada", cls: "bg-red-lt" },
 };
 
-export function useCustodies() {
+export function useCustodies(asset?: string) {
   return useQuery({
-    queryKey: ["custodies"],
-    queryFn: async () => (await api.get<Paginated<Custody>>("/custodies")).data,
+    queryKey: ["custodies", asset ?? "all"],
+    queryFn: async () => {
+      const q = asset ? `?asset=${asset}` : "";
+      return (await api.get<Paginated<Custody>>(`/custodies${q}`)).data;
+    },
   });
 }
 

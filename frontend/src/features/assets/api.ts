@@ -6,10 +6,15 @@ export interface Asset {
   id: string;
   asset_tag: string;
   name: string;
+  description: string;
   status: string;
   condition: string;
+  category: string | null;
+  location: string | null;
   category_name: string | null;
   location_name: string | null;
+  protection_notes: string;
+  is_bookable: boolean;
   created_at: string;
 }
 
@@ -18,6 +23,33 @@ interface Paginated<T> {
   count: number;
 }
 
+export const CONDITIONS = [
+  { value: "new", label: "Novo" },
+  { value: "good", label: "Bom" },
+  { value: "regular", label: "Regular" },
+  { value: "bad", label: "Ruim" },
+  { value: "unusable", label: "Inservível" },
+];
+
+export const ASSET_STATUS = [
+  { value: "available", label: "Disponível", cls: "bg-green-lt" },
+  { value: "reserved", label: "Reservado", cls: "bg-yellow-lt" },
+  { value: "in_use", label: "Em uso", cls: "bg-blue-lt" },
+  { value: "maintenance", label: "Manutenção", cls: "bg-orange-lt" },
+  { value: "written_off", label: "Baixado", cls: "bg-secondary-lt" },
+];
+
+export const STATUS_META: Record<string, { label: string; cls: string }> = Object.fromEntries(
+  ASSET_STATUS.map((s) => [s.value, { label: s.label, cls: s.cls }]),
+);
+
+export const LOCATION_TYPES = [
+  { value: "unit", label: "Unidade" },
+  { value: "building", label: "Prédio" },
+  { value: "floor", label: "Andar" },
+  { value: "room", label: "Sala" },
+];
+
 export function useAssets() {
   return useQuery({
     queryKey: ["assets"],
@@ -25,18 +57,30 @@ export function useAssets() {
   });
 }
 
-export interface NewAsset {
-  name: string;
+export interface AssetInput {
+  name?: string;
   description?: string;
   condition?: string;
+  status?: string;
   category?: string | null;
   location?: string | null;
+  is_bookable?: boolean;
+  protection_notes?: string;
 }
 
 export function useCreateAsset() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: NewAsset) => (await api.post<Asset>("/assets", payload)).data,
+    mutationFn: async (payload: AssetInput) => (await api.post<Asset>("/assets", payload)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["assets"] }),
+  });
+}
+
+export function useUpdateAsset() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...body }: AssetInput & { id: string }) =>
+      (await api.patch<Asset>(`/assets/${id}`, body)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["assets"] }),
   });
 }
@@ -44,6 +88,7 @@ export function useCreateAsset() {
 export interface NamedRef {
   id: string;
   name: string;
+  type?: string;
 }
 
 export function useCategories() {
@@ -60,10 +105,25 @@ export function useLocations() {
   });
 }
 
-export const CONDITIONS = [
-  { value: "new", label: "Novo" },
-  { value: "good", label: "Bom" },
-  { value: "regular", label: "Regular" },
-  { value: "bad", label: "Ruim" },
-  { value: "unusable", label: "Inservível" },
-];
+export function useCreateCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (name: string) => (await api.post("/categories", { name })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["categories"] }),
+  });
+}
+
+export function useCreateLocation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { name: string; type: string }) =>
+      (await api.post("/locations", body)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["locations"] }),
+  });
+}
+
+/** Fetches the QR PNG (auth-protected) and returns an object URL. */
+export async function fetchAssetQrUrl(id: string): Promise<string> {
+  const resp = await api.get(`/assets/${id}/qrcode`, { responseType: "blob" });
+  return URL.createObjectURL(resp.data as Blob);
+}
