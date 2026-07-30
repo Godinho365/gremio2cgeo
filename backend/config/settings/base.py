@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "apps.assets",
     "apps.scheduling",
     "apps.custody",
+    "apps.inventory",
 ]
 
 MIDDLEWARE = [

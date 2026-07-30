@@ -11,6 +11,7 @@ from apps.assets.api.views import (
     SupplierViewSet,
 )
 from apps.custody.api.views import CustodyViewSet
+from apps.inventory.api.views import InventoryViewSet
 from apps.scheduling.api.views import AvailabilityViewSet, BookingViewSet
 
 app_name = "api"
@@ -25,6 +26,7 @@ router.register("acquisitions", AcquisitionViewSet, basename="acquisition")
 router.register("availabilities", AvailabilityViewSet, basename="availability")
 router.register("bookings", BookingViewSet, basename="booking")
 router.register("custodies", CustodyViewSet, basename="custody")
+router.register("inventories", InventoryViewSet, basename="inventory")
 
 urlpatterns = [
     path("auth/signup", SignupView.as_view(), name="signup"),
