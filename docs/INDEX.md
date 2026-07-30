@@ -40,7 +40,7 @@ dominio/
 modulos/
   _template.md .............. ✅ (modelo)
   patrimonio.md ............. ✅  (Art.30 a — backend+UI no Sprint 2)
-  inventario.md ............. 🟡  (Art.30 b)
+  inventario.md ............. ✅  (Art.30 b — backend+UI no Sprint 5)
   manutencao.md ............. ⛔  (Art.30 c)
   cautelas.md ............... ✅  (Art.30 d)
   agenda.md ................. 🟡  (backend+UI reservas no Sprint 3)
