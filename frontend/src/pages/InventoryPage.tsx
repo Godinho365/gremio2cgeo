@@ -28,6 +28,7 @@ export default function InventoryPage() {
       <div className="page-header">
         <div className="row align-items-center">
           <div className="col">
+            <div className="page-pretitle">Conferência periódica (Art. 30 b)</div>
             <h2 className="page-title">Inventário</h2>
           </div>
           <div className="col-auto ms-auto">

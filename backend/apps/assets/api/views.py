@@ -25,6 +25,7 @@ from .serializers import (
     AssetSerializer,
     AssetUpdateSerializer,
     CategorySerializer,
+    FloorPlanSerializer,
     LocationSerializer,
     SupplierSerializer,
 )
@@ -55,6 +56,18 @@ class AcquisitionViewSet(TenantCrudViewSet):
     serializer_class = AcquisitionSerializer
     permission_classes = [IsAuthenticated, HasAnyRole]
     required_roles = _MANAGE_ROLES
+
+
+class FloorPlanViewSet(TenantCrudViewSet):
+    """Planta da sala (uma por tenant). Leitura: qualquer usuário; escrita: gestor."""
+
+    serializer_class = FloorPlanSerializer
+    required_roles = _MANAGE_ROLES
+
+    def get_permissions(self):  # type: ignore[override]
+        if self.request.method not in ("GET", "HEAD", "OPTIONS"):
+            return [IsAuthenticated(), HasAnyRole()]
+        return [IsAuthenticated()]
 
 
 class AssetViewSet(TenantScopedViewSet):

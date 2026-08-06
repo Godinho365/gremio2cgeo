@@ -53,3 +53,67 @@ export function useCreateUser() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
   });
 }
+
+// Postos e graduações do Exército Brasileiro (value = abreviatura usada na exibição).
+export const MILITARY_RANKS: { group: string; items: { value: string; label: string }[] }[] = [
+  {
+    group: "Oficiais-Generais",
+    items: [
+      { value: "Mar", label: "Marechal" },
+      { value: "Gen Ex", label: "General de Exército" },
+      { value: "Gen Div", label: "General de Divisão" },
+      { value: "Gen Bda", label: "General de Brigada" },
+    ],
+  },
+  {
+    group: "Oficiais Superiores",
+    items: [
+      { value: "Cel", label: "Coronel" },
+      { value: "Ten Cel", label: "Tenente-Coronel" },
+      { value: "Maj", label: "Major" },
+    ],
+  },
+  {
+    group: "Oficiais Intermediários",
+    items: [{ value: "Cap", label: "Capitão" }],
+  },
+  {
+    group: "Oficiais Subalternos",
+    items: [
+      { value: "1º Ten", label: "1º Tenente" },
+      { value: "2º Ten", label: "2º Tenente" },
+      { value: "Asp Of", label: "Aspirante a Oficial" },
+    ],
+  },
+  {
+    group: "Praças",
+    items: [
+      { value: "ST", label: "Subtenente" },
+      { value: "1º Sgt", label: "1º Sargento" },
+      { value: "2º Sgt", label: "2º Sargento" },
+      { value: "3º Sgt", label: "3º Sargento" },
+      { value: "Cb", label: "Cabo" },
+      { value: "Sd", label: "Soldado" },
+    ],
+  },
+];
+
+// Auto-cadastro público de usuário (login por e-mail).
+export interface SignupPayload {
+  full_name: string;
+  nome_guerra: string;
+  posto_graduacao: string;
+  cpf: string;
+  birth_date: string; // YYYY-MM-DD
+  email: string;
+  email_confirm: string;
+  phone?: string;
+  password: string;
+}
+
+export function useSignup() {
+  return useMutation({
+    mutationFn: async (payload: SignupPayload) =>
+      (await api.post<UserRef>("/auth/signup", payload)).data,
+  });
+}

@@ -1,5 +1,6 @@
-import { IconPlus, IconQrcode } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { IconBox, IconPlus, IconPrinter, IconQrcode, IconSearch } from "@tabler/icons-react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import {
@@ -182,6 +183,38 @@ function LabelModal({ asset, onClose }: { asset: Asset; onClose: () => void }) {
     };
   }, [asset.id]);
 
+  function printLabel() {
+    if (!url) return;
+    const esc = (s: string) =>
+      s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+    const w = window.open("", "_blank", "width=420,height=460");
+    if (!w) {
+      alert("Permita pop-ups para imprimir a etiqueta.");
+      return;
+    }
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8">
+      <title>Etiqueta ${esc(asset.asset_tag)}</title>
+      <style>
+        @page { margin: 8mm; }
+        body { font-family: system-ui, Arial, sans-serif; margin: 0; }
+        .label { display:inline-block; padding:14px 18px; border:2px solid #111; border-radius:10px; text-align:center; }
+        .org { font-size:11px; letter-spacing:1px; text-transform:uppercase; color:#555; margin-bottom:6px; }
+        img { width:180px; height:180px; }
+        .tag { font-size:24px; font-weight:800; margin-top:8px; letter-spacing:1px; }
+        .name { font-size:13px; color:#444; margin-top:2px; max-width:200px; }
+        .wrap { text-align:center; padding:12px; }
+      </style></head>
+      <body><div class="wrap"><div class="label">
+        <div class="org">Patrimônio</div>
+        <img src="${url}" alt="QR"/>
+        <div class="tag">${esc(asset.asset_tag)}</div>
+        <div class="name">${esc(asset.name)}</div>
+      </div></div>
+      <script>window.onload=function(){window.focus();window.print();};</script>
+      </body></html>`);
+    w.document.close();
+  }
+
   return (
     <>
       <div className="modal modal-blur show d-block" tabIndex={-1}>
@@ -204,11 +237,10 @@ function LabelModal({ asset, onClose }: { asset: Asset; onClose: () => void }) {
               <button className="btn btn-link" onClick={onClose}>
                 Fechar
               </button>
-              {url && (
-                <a className="btn btn-primary" href={url} target="_blank" rel="noreferrer">
-                  Abrir / Imprimir
-                </a>
-              )}
+              <button className="btn btn-primary" onClick={printLabel} disabled={!url}>
+                <IconPrinter size={18} className="me-1" />
+                Imprimir etiqueta
+              </button>
             </div>
           </div>
         </div>
@@ -224,13 +256,29 @@ export default function AssetsPage() {
   const update = useUpdateAsset();
   const [form, setForm] = useState<{ asset?: Asset } | null>(null);
   const [label, setLabel] = useState<Asset | null>(null);
+  const [q, setQ] = useState("");
   const isManager = user?.roles.some((r) => r === "admin" || r === "director") ?? false;
+
+  const all = data?.results ?? [];
+  const filtered = useMemo(() => {
+    const rows = data?.results ?? [];
+    const term = q.trim().toLowerCase();
+    if (!term) return rows;
+    return rows.filter((a) =>
+      [a.asset_tag, a.name, a.category_name, a.location_name]
+        .filter(Boolean)
+        .some((v) => v!.toLowerCase().includes(term)),
+    );
+  }, [data?.results, q]);
+
+  const byStatus = (s: string) => all.filter((a) => a.status === s).length;
 
   return (
     <>
       <div className="page-header">
         <div className="row align-items-center">
           <div className="col">
+            <div className="page-pretitle">Bens da organização</div>
             <h2 className="page-title">Patrimônio</h2>
           </div>
           {isManager && (
@@ -244,7 +292,53 @@ export default function AssetsPage() {
         </div>
       </div>
 
+      <div className="row row-cards mt-1">
+        <div className="col-sm-6 col-lg-3">
+          <div className="card card-sm">
+            <div className="card-body">
+              <div className="row align-items-center">
+                <div className="col-auto">
+                  <span className="avatar bg-primary text-white">
+                    <IconBox size={22} />
+                  </span>
+                </div>
+                <div className="col">
+                  <div className="h1 mb-0 lh-1">{data?.count ?? 0}</div>
+                  <div className="text-secondary">Total de bens</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        {["available", "in_use", "maintenance"].map((s) => (
+          <div className="col-sm-6 col-lg-3" key={s}>
+            <div className="card card-sm">
+              <div className="card-body">
+                <div className="h1 mb-0 lh-1">{byStatus(s)}</div>
+                <div className="text-secondary">{STATUS_META[s]?.label ?? s}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div className="card mt-3">
+        <div className="card-header">
+          <div className="input-icon" style={{ maxWidth: 360 }}>
+            <span className="input-icon-addon">
+              <IconSearch size={16} />
+            </span>
+            <input
+              className="form-control"
+              placeholder="Buscar por número, nome, categoria…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+          <span className="ms-auto text-secondary small align-self-center">
+            {filtered.length} {filtered.length === 1 ? "bem" : "bens"}
+          </span>
+        </div>
         <div className="table-responsive">
           <table className="table table-vcenter card-table">
             <thead>
@@ -265,17 +359,25 @@ export default function AssetsPage() {
                   </td>
                 </tr>
               )}
-              {!isLoading && data?.results.length === 0 && (
+              {!isLoading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-secondary">
-                    Nenhum bem cadastrado ainda.
+                  <td colSpan={6} className="text-secondary text-center py-4">
+                    {q ? "Nenhum bem para a busca." : "Nenhum bem cadastrado ainda."}
                   </td>
                 </tr>
               )}
-              {data?.results.map((a) => (
+              {filtered.map((a) => (
                 <tr key={a.id}>
                   <td className="text-secondary">{a.asset_tag}</td>
-                  <td>{a.name}</td>
+                  <td>
+                    <Link
+                      to={`/agenda?asset=${a.id}`}
+                      className="text-reset text-decoration-none fw-medium"
+                      title="Ver agenda deste bem"
+                    >
+                      {a.name}
+                    </Link>
+                  </td>
                   <td>{a.category_name ?? "—"}</td>
                   <td>{a.location_name ?? "—"}</td>
                   <td style={{ maxWidth: 160 }}>

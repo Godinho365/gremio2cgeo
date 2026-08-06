@@ -1,5 +1,6 @@
+import { IconBuildingWarehouse } from "@tabler/icons-react";
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 
@@ -33,7 +34,11 @@ export default function LoginPage() {
     <div className="page page-center">
       <div className="container container-tight py-4">
         <div className="text-center mb-4">
-          <span className="h1 fw-bold">Patrimonia</span>
+          <span className="d-inline-flex align-items-center gap-2">
+            <IconBuildingWarehouse size={34} className="text-primary" />
+            <span className="h1 fw-bold mb-0">Patrimonia</span>
+          </span>
+          <div className="text-secondary mt-1">ERP Patrimonial · Grêmio</div>
         </div>
         <div className="card card-md">
           <div className="card-body">
@@ -41,9 +46,10 @@ export default function LoginPage() {
             {error && <div className="alert alert-danger">{error}</div>}
             <form onSubmit={onSubmit}>
               <div className="mb-3">
-                <label className="form-label">Usuário</label>
+                <label className="form-label">E-mail</label>
                 <input
                   className="form-control"
+                  placeholder="seu@email.com"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   autoFocus
@@ -65,6 +71,12 @@ export default function LoginPage() {
               </div>
             </form>
           </div>
+        </div>
+        <div className="text-center text-secondary mt-3">
+          Não tem conta? <Link to="/signup">Criar conta</Link>
+        </div>
+        <div className="text-center text-secondary mt-2 small">
+          Controle de patrimônio, cautelas e inventário
         </div>
       </div>
     </div>

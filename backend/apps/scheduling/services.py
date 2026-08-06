@@ -5,6 +5,7 @@ from datetime import datetime
 from uuid import UUID
 
 from django.db import transaction
+from django.utils import timezone
 
 from apps.assets.models import Asset, AssetStatus
 from core import audit
@@ -47,6 +48,12 @@ class BookingService(BaseService):
     ) -> Booking:
         if start_at >= end_at:
             raise BusinessRuleError("Início deve ser anterior ao término.", code="invalid_interval")
+
+        # Não permite reservar em datas passadas (comparação por dia; reservas são all-day).
+        if timezone.localtime(start_at).date() < timezone.localdate():
+            raise BusinessRuleError(
+                "Não é possível reservar em datas passadas.", code="start_in_past"
+            )
 
         # RN-B3: bem precisa ser reservável e não estar em manutenção/baixado.
         asset = Asset.objects.for_current_tenant().alive().get(pk=asset_id)

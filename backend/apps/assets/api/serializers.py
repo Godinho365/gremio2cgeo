@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from ..models import Acquisition, Asset, Category, Location, Supplier
+from ..models import Acquisition, Asset, Category, FloorPlan, Location, Supplier
 
 
 class TenantRelationsMixin:
@@ -73,6 +73,8 @@ class AssetSerializer(serializers.ModelSerializer):
             "acquisition_value",
             "protection_notes",
             "is_bookable",
+            "plan_x",
+            "plan_y",
             "created_at",
         ]
         read_only_fields = ["id", "asset_tag", "status", "created_at"]
@@ -100,7 +102,16 @@ class AssetUpdateSerializer(TenantRelationsMixin, serializers.ModelSerializer):
             "acquisition_value",
             "protection_notes",
             "is_bookable",
+            "plan_x",
+            "plan_y",
         ]
+
+
+class FloorPlanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FloorPlan
+        fields = ["id", "name", "image_data", "updated_at"]
+        read_only_fields = ["id", "updated_at"]
 
 
 class AssetCreateSerializer(TenantRelationsMixin, serializers.ModelSerializer):

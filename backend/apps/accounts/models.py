@@ -39,6 +39,11 @@ class User(AbstractUser):
     # Contexto militar/policial (ver estatuto). Nome de guerra e posto/graduação.
     nome_guerra = models.CharField(max_length=60, blank=True)
     posto_graduacao = models.CharField(max_length=60, blank=True)
+    # Dados cadastrais (auto-cadastro por e-mail).
+    full_name = models.CharField(max_length=255, blank=True)
+    cpf = models.CharField(max_length=11, blank=True)  # só dígitos
+    birth_date = models.DateField(null=True, blank=True)
+    phone = models.CharField(max_length=20, blank=True)
 
     class Meta:
         db_table = "user"
@@ -49,4 +54,4 @@ class User(AbstractUser):
     @property
     def display_name(self) -> str:
         parts = [p for p in (self.posto_graduacao, self.nome_guerra) if p]
-        return " ".join(parts) or self.username
+        return " ".join(parts) or self.full_name or self.username

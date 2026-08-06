@@ -20,7 +20,7 @@ class AvailabilitySerializer(TenantRelationsMixin, serializers.ModelSerializer):
 class BookingSerializer(serializers.ModelSerializer):
     asset_tag = serializers.CharField(source="asset.asset_tag", read_only=True)
     asset_name = serializers.CharField(source="asset.name", read_only=True)
-    requester_name = serializers.CharField(source="requester.username", read_only=True)
+    requester_name = serializers.CharField(source="requester.display_name", read_only=True)
 
     class Meta:
         model = Booking

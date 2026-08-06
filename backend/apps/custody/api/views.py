@@ -1,6 +1,7 @@
 """Cautelas HTTP layer (Art.30 d). Regras no CustodyService; sem lógica aqui."""
 from __future__ import annotations
 
+from django.db.models import Count, Q
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -11,7 +12,7 @@ from apps.accounts.models import RoleCode
 from core.exceptions import BusinessRuleError
 from core.viewsets import TenantScopedViewSet
 
-from ..models import Custody
+from ..models import Custody, CustodyStatus
 from ..services import CustodyService
 from .serializers import CustodyIssueSerializer, CustodyReturnSerializer, CustodySerializer
 
@@ -32,11 +33,31 @@ class CustodyViewSet(TenantScopedViewSet):
         qs = self.service.repository.all().select_related("asset", "holder", "issued_by")
         asset = self.request.query_params.get("asset")
         status_f = self.request.query_params.get("status")
+        q = self.request.query_params.get("q")
         if asset:
             qs = qs.filter(asset_id=asset)
         if status_f:
             qs = qs.filter(status=status_f)
+        if q:
+            qs = qs.filter(
+                Q(asset__name__icontains=q)
+                | Q(asset__asset_tag__icontains=q)
+                | Q(holder__username__icontains=q)
+                | Q(holder__nome_guerra__icontains=q)
+                | Q(holder__posto_graduacao__icontains=q)
+            )
         return qs.order_by("-issued_at")
+
+    @extend_schema(responses={200: dict})
+    @action(detail=False, methods=["get"])
+    def stats(self, request: Request) -> Response:
+        """Quantitativo de cautelas por situação (todas do tenant)."""
+        rows = self.service.repository.all().values("status").annotate(n=Count("id"))
+        counts = {r["status"]: r["n"] for r in rows}
+        data = {s.value: counts.get(s.value, 0) for s in CustodyStatus}
+        data["total"] = sum(data.values())
+        data["open"] = data[CustodyStatus.ACTIVE] + data[CustodyStatus.OVERDUE]
+        return Response(data)
 
     @extend_schema(request=CustodyIssueSerializer, responses={201: CustodySerializer})
     def create(self, request: Request, *args: object, **kwargs: object) -> Response:

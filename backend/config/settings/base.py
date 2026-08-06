@@ -3,6 +3,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -128,5 +129,14 @@ SPECTACULAR_SETTINGS = {
 CELERY_BROKER_URL = env("REDIS_URL", default="redis://redis:6379/0")
 CELERY_RESULT_BACKEND = env("REDIS_URL", default="redis://redis:6379/0")
 CELERY_TASK_TRACK_STARTED = True
+
+# Jobs periódicos (Celery beat).
+CELERY_BEAT_SCHEDULE = {
+    # RN-C4: marca cautelas vencidas como 'atrasada' de hora em hora.
+    "mark-overdue-custodies": {
+        "task": "custody.mark_overdue_custodies",
+        "schedule": crontab(minute=0),
+    },
+}
 
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:5173"])

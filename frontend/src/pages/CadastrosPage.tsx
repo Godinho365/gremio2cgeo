@@ -1,3 +1,4 @@
+import { IconTrash } from "@tabler/icons-react";
 import { useState } from "react";
 
 import {
@@ -5,12 +6,15 @@ import {
   useCategories,
   useCreateCategory,
   useCreateLocation,
+  useDeleteCategory,
+  useDeleteLocation,
   useLocations,
 } from "../features/assets/api";
 
 function CategoriesCard() {
   const { data } = useCategories();
   const create = useCreateCategory();
+  const del = useDeleteCategory();
   const [name, setName] = useState("");
 
   async function add(e: React.FormEvent) {
@@ -39,8 +43,21 @@ function CategoriesCard() {
         </form>
         <ul className="list-group list-group-flush">
           {data?.map((c) => (
-            <li key={c.id} className="list-group-item px-0">
-              {c.name}
+            <li
+              key={c.id}
+              className="list-group-item px-0 d-flex justify-content-between align-items-center"
+            >
+              <span>{c.name}</span>
+              <button
+                className="btn btn-sm btn-ghost-danger btn-icon"
+                title="Excluir"
+                disabled={del.isPending}
+                onClick={() => {
+                  if (confirm(`Excluir a categoria “${c.name}”?`)) del.mutate(c.id);
+                }}
+              >
+                <IconTrash size={16} />
+              </button>
             </li>
           ))}
           {data?.length === 0 && <li className="list-group-item px-0 text-secondary">Nenhuma.</li>}
@@ -53,6 +70,7 @@ function CategoriesCard() {
 function LocationsCard() {
   const { data } = useLocations();
   const create = useCreateLocation();
+  const del = useDeleteLocation();
   const [name, setName] = useState("");
   const [type, setType] = useState("room");
 
@@ -96,9 +114,24 @@ function LocationsCard() {
         </form>
         <ul className="list-group list-group-flush">
           {data?.map((l) => (
-            <li key={l.id} className="list-group-item px-0 d-flex justify-content-between">
+            <li
+              key={l.id}
+              className="list-group-item px-0 d-flex justify-content-between align-items-center"
+            >
               <span>{l.name}</span>
-              <span className="badge bg-secondary-lt">{typeLabel(l.type)}</span>
+              <div className="d-flex align-items-center gap-2">
+                <span className="badge bg-secondary-lt">{typeLabel(l.type)}</span>
+                <button
+                  className="btn btn-sm btn-ghost-danger btn-icon"
+                  title="Excluir"
+                  disabled={del.isPending}
+                  onClick={() => {
+                    if (confirm(`Excluir a localização “${l.name}”?`)) del.mutate(l.id);
+                  }}
+                >
+                  <IconTrash size={16} />
+                </button>
+              </div>
             </li>
           ))}
           {data?.length === 0 && <li className="list-group-item px-0 text-secondary">Nenhuma.</li>}
@@ -112,6 +145,7 @@ export default function CadastrosPage() {
   return (
     <>
       <div className="page-header">
+        <div className="page-pretitle">Configurações do catálogo</div>
         <h2 className="page-title">Cadastros</h2>
       </div>
       <div className="row row-cards mt-1">

@@ -7,6 +7,7 @@ from apps.assets.api.views import (
     AcquisitionViewSet,
     AssetViewSet,
     CategoryViewSet,
+    FloorPlanViewSet,
     LocationViewSet,
     SupplierViewSet,
 )
@@ -23,6 +24,7 @@ router.register("categories", CategoryViewSet, basename="category")
 router.register("locations", LocationViewSet, basename="location")
 router.register("suppliers", SupplierViewSet, basename="supplier")
 router.register("acquisitions", AcquisitionViewSet, basename="acquisition")
+router.register("floorplans", FloorPlanViewSet, basename="floorplan")
 router.register("availabilities", AvailabilityViewSet, basename="availability")
 router.register("bookings", BookingViewSet, basename="booking")
 router.register("custodies", CustodyViewSet, basename="custody")

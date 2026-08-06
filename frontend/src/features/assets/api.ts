@@ -15,6 +15,8 @@ export interface Asset {
   location_name: string | null;
   protection_notes: string;
   is_bookable: boolean;
+  plan_x: number | null;
+  plan_y: number | null;
   created_at: string;
 }
 
@@ -66,6 +68,8 @@ export interface AssetInput {
   location?: string | null;
   is_bookable?: boolean;
   protection_notes?: string;
+  plan_x?: number | null;
+  plan_y?: number | null;
 }
 
 export function useCreateAsset() {
@@ -113,6 +117,16 @@ export function useCreateCategory() {
   });
 }
 
+export function useDeleteCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/categories/${id}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["categories"] }),
+  });
+}
+
 export function useCreateLocation() {
   const qc = useQueryClient();
   return useMutation({
@@ -122,8 +136,57 @@ export function useCreateLocation() {
   });
 }
 
-/** Fetches the QR PNG (auth-protected) and returns an object URL. */
+export function useDeleteLocation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/locations/${id}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["locations"] }),
+  });
+}
+
+/** Fetches the QR PNG (auth-protected) as a base64 data URL (usable for print). */
 export async function fetchAssetQrUrl(id: string): Promise<string> {
   const resp = await api.get(`/assets/${id}/qrcode`, { responseType: "blob" });
-  return URL.createObjectURL(resp.data as Blob);
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(resp.data as Blob);
+  });
+}
+
+// ── Planta da sala (floor plan) ──────────────────────────────────────────────
+export interface FloorPlan {
+  id: string;
+  name: string;
+  image_data: string; // data URI (base64)
+  updated_at: string;
+}
+
+export function useFloorPlan() {
+  return useQuery({
+    queryKey: ["floorplan"],
+    queryFn: async () =>
+      (await api.get<Paginated<FloorPlan>>("/floorplans")).data.results[0] ?? null,
+  });
+}
+
+export function useSaveFloorPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { id?: string; name?: string; image_data: string }) => {
+      if (payload.id) {
+        return (await api.patch<FloorPlan>(`/floorplans/${payload.id}`, payload)).data;
+      }
+      return (
+        await api.post<FloorPlan>("/floorplans", {
+          name: payload.name ?? "Planta",
+          image_data: payload.image_data,
+        })
+      ).data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["floorplan"] }),
+  });
 }

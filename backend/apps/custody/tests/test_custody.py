@@ -105,17 +105,20 @@ def test_non_manager_cannot_approve(client: APIClient):
     assert client.post(f"/api/custodies/{cid}/approve").status_code == 422
 
 
-def test_only_one_active_per_asset(client: APIClient):
+def test_cannot_request_twice_for_same_asset(client: APIClient):
     tenant, admin = _org("cu6")
     asset = _asset(tenant)
     client.force_authenticate(admin)
     c1 = client.post("/api/custodies", _payload(asset, admin), format="json").data["id"]
-    c2 = client.post("/api/custodies", _payload(asset, admin), format="json").data["id"]
-    assert client.post(f"/api/custodies/{c1}/approve").status_code == 200
-    # segunda aprovação barrada: bem em uso / cautela aberta (RN-C2)
-    resp = client.post(f"/api/custodies/{c2}/approve")
+    # 2ª solicitação barrada: já existe cautela pendente para o bem
+    resp = client.post("/api/custodies", _payload(asset, admin), format="json")
     assert resp.status_code == 422
-    assert resp.data["error"]["code"] in ("custody_open", "asset_not_issuable")
+    assert resp.data["error"]["code"] == "custody_already_requested"
+    # após aprovar a 1ª (bem em uso), continua barrado (RN-C2)
+    assert client.post(f"/api/custodies/{c1}/approve").status_code == 200
+    resp2 = client.post("/api/custodies", _payload(asset, admin), format="json")
+    assert resp2.status_code == 422
+    assert resp2.data["error"]["code"] == "custody_already_requested"
 
 
 def test_return_ok_makes_available(client: APIClient):

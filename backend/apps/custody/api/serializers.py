@@ -15,8 +15,8 @@ from ..models import Custody, InspectionOutcome
 class CustodySerializer(serializers.ModelSerializer):
     asset_tag = serializers.CharField(source="asset.asset_tag", read_only=True)
     asset_name = serializers.CharField(source="asset.name", read_only=True)
-    holder_name = serializers.CharField(source="holder.username", read_only=True)
-    issued_by_name = serializers.CharField(source="issued_by.username", read_only=True)
+    holder_name = serializers.CharField(source="holder.display_name", read_only=True)
+    issued_by_name = serializers.CharField(source="issued_by.display_name", read_only=True)
 
     class Meta:
         model = Custody

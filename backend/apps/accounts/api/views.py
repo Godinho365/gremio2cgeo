@@ -13,7 +13,7 @@ from core.context import set_current_tenant_id
 from core.permissions import HasAnyRole
 
 from ..models import RoleCode
-from ..services import OnboardingService, UserService
+from ..services import UserService
 from .serializers import (
     SignupSerializer,
     TenantTokenSerializer,
@@ -27,21 +27,17 @@ class TenantTokenView(TokenObtainPairView):
 
 
 class SignupView(APIView):
+    """Auto-cadastro público de usuário (login por e-mail)."""
+
     permission_classes = [AllowAny]
-    service = OnboardingService()
+    service = UserService()
 
     @extend_schema(request=SignupSerializer, responses={201: UserSerializer})
     def post(self, request: Request) -> Response:
         payload = SignupSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
-        tenant, admin = self.service.create_organization(**payload.validated_data)
-        return Response(
-            {
-                "tenant": {"id": str(tenant.id), "name": tenant.name},
-                "admin": UserSerializer(admin).data,
-            },
-            status=201,
-        )
+        user = self.service.self_register(**payload.validated_data)
+        return Response(UserSerializer(user).data, status=201)
 
 
 class MeView(APIView):

@@ -23,6 +23,8 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    // Bind-mount no Docker/Windows não propaga eventos de FS: usa polling p/ HMR.
+    watch: { usePolling: true },
     proxy: {
       "/api": {
         target: process.env.VITE_API_TARGET ?? "http://localhost:8000",

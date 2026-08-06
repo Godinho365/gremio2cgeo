@@ -37,6 +37,10 @@ class UserService(BaseService):
         email: str = "",
         nome_guerra: str = "",
         posto_graduacao: str = "",
+        full_name: str = "",
+        cpf: str = "",
+        birth_date: object = None,
+        phone: str = "",
         role_codes: list[str] | None = None,
         tenant_id: UUID | None = None,
         actor_id: UUID | None = None,
@@ -51,6 +55,10 @@ class UserService(BaseService):
                 tenant_id=tenant_id,
                 nome_guerra=nome_guerra,
                 posto_graduacao=posto_graduacao,
+                full_name=full_name,
+                cpf=cpf,
+                birth_date=birth_date,
+                phone=phone,
             )
             user.set_password(password)
             user.save()
@@ -68,6 +76,40 @@ class UserService(BaseService):
             diff={"username": username, "roles": role_codes or []},
         )
         return user
+
+    @transaction.atomic
+    def self_register(
+        self,
+        *,
+        full_name: str,
+        nome_guerra: str,
+        posto_graduacao: str,
+        cpf: str,
+        birth_date: object,
+        email: str,
+        phone: str,
+        password: str,
+    ) -> User:
+        """Auto-cadastro público: cria um usuário comum na organização existente."""
+        tenant = Tenant.objects.filter(is_active=True).order_by("created_at").first()
+        if tenant is None:
+            raise BusinessRuleError(
+                "Nenhuma organização disponível para cadastro.", code="no_org"
+            )
+        with use_tenant(tenant.id):
+            return self.create_user(
+                username=email,  # login por e-mail
+                password=password,
+                email=email,
+                full_name=full_name,
+                nome_guerra=nome_guerra,
+                posto_graduacao=posto_graduacao,
+                cpf=cpf,
+                birth_date=birth_date,
+                phone=phone,
+                role_codes=[RoleCode.USER],
+                tenant_id=tenant.id,
+            )
 
 
 class OnboardingService(BaseService):

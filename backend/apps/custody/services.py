@@ -46,6 +46,17 @@ class CustodyService(BaseService):
         notes: str = "",
     ) -> Custody:
         """Cria uma cautela SOLICITADA (pendente). Sem assinatura; aprovação em etapa própria."""
+        # Comparação por DIA: "devolver até hoje" é válido (o campo é uma data).
+        if timezone.localtime(due_at).date() < timezone.localdate():
+            raise BusinessRuleError(
+                "A data de devolução não pode ser no passado.", code="due_at_in_past"
+            )
+        # Não permite solicitar cautela para um bem que já tem cautela pendente ou aberta.
+        if self.repository.has_pending_or_open_for_asset(asset_id):
+            raise BusinessRuleError(
+                "Já existe uma cautela solicitada ou ativa para este bem.",
+                code="custody_already_requested",
+            )
         custody = self.repository.create(
             asset_id=asset_id,
             booking_id=booking_id,

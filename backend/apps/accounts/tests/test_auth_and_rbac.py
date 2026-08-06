@@ -22,16 +22,55 @@ def _make_org(name: str) -> tuple:
     )
 
 
-def test_signup_creates_tenant_and_admin(client: APIClient):
+def test_signup_registers_user_by_email(client: APIClient):
+    tenant, _ = _make_org("Base")  # organização precisa existir
     resp = client.post(
         "/api/auth/signup",
-        {"org_name": "Clube X", "admin_username": "boss", "admin_password": "supersecret123"},
+        {
+            "full_name": "João da Silva",
+            "nome_guerra": "SILVA",
+            "posto_graduacao": "Cap",
+            "cpf": "111.444.777-35",  # CPF válido
+            "birth_date": "1990-05-10",
+            "email": "joao@ex.com",
+            "email_confirm": "joao@ex.com",
+            "phone": "(11) 99999-9999",
+            "password": "supersecret123",
+        },
         format="json",
     )
     assert resp.status_code == 201
-    admin = User.objects.get(username="boss")
-    assert admin.tenant is not None
-    assert admin.has_role(RoleCode.ADMIN)
+    u = User.objects.get(email="joao@ex.com")
+    assert u.tenant_id == tenant.id
+    assert u.has_role(RoleCode.USER)
+    assert u.full_name == "João da Silva"
+    assert u.cpf == "11144477735"  # armazenado só com dígitos
+    # login por e-mail funciona
+    tok = client.post(
+        "/api/auth/token",
+        {"username": "joao@ex.com", "password": "supersecret123"},
+        format="json",
+    )
+    assert tok.status_code == 200
+
+
+def test_signup_rejects_invalid_cpf(client: APIClient):
+    _make_org("Base2")
+    resp = client.post(
+        "/api/auth/signup",
+        {
+            "full_name": "Maria",
+            "nome_guerra": "SOUZA",
+            "posto_graduacao": "Sd",
+            "cpf": "111.111.111-11",  # inválido
+            "birth_date": "1990-05-10",
+            "email": "maria@ex.com",
+            "email_confirm": "maria@ex.com",
+            "password": "supersecret123",
+        },
+        format="json",
+    )
+    assert resp.status_code == 400
 
 
 def test_login_returns_jwt_with_tenant_and_roles(client: APIClient):

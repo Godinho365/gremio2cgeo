@@ -4,31 +4,48 @@ import { useUsers } from "../features/accounts/api";
 import { CONDITIONS, useAssets } from "../features/assets/api";
 import { useIssueCustody } from "../features/custody/api";
 
+// Data de hoje em "YYYY-MM-DD" (local) — piso para o prazo de devolução.
+function todayStr(): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export default function IssueCustodyModal({
   asset: fixedAsset,
   assetLabel,
   defaultHolder,
+  defaultDue,
   bookingId,
   onClose,
 }: {
   asset?: string;
   assetLabel?: string;
   defaultHolder?: string;
+  defaultDue?: string;
   bookingId?: string | null;
   onClose: () => void;
 }) {
   const users = useUsers();
   const assets = useAssets();
   const issue = useIssueCustody();
+  const today = todayStr();
   const [asset, setAsset] = useState(fixedAsset ?? "");
   const [holder, setHolder] = useState(defaultHolder ?? "");
-  const [due, setDue] = useState("");
+  // Não pré-preenche com data passada (ex.: reserva antiga).
+  const [due, setDue] = useState(defaultDue && defaultDue >= today ? defaultDue : "");
   const [condition, setCondition] = useState("good");
   const [error, setError] = useState<string | null>(null);
+
+  const duePast = due !== "" && due < today; // prazo no passado → inválido
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (due < today) {
+      setError("A data de devolução não pode ser no passado.");
+      return;
+    }
     try {
       await issue.mutateAsync({
         asset,
@@ -98,11 +115,17 @@ export default function IssueCustodyModal({
                     <label className="form-label required">Devolver até</label>
                     <input
                       type="date"
-                      className="form-control"
+                      className={`form-control${duePast ? " is-invalid" : ""}`}
                       value={due}
+                      min={today}
                       onChange={(e) => setDue(e.target.value)}
                       required
                     />
+                    {duePast && (
+                      <div className="invalid-feedback d-block">
+                        A data de devolução não pode ser no passado.
+                      </div>
+                    )}
                   </div>
                   <div className="col-6 mb-1">
                     <label className="form-label">Estado na entrega</label>
@@ -124,7 +147,11 @@ export default function IssueCustodyModal({
                 <button type="button" className="btn btn-link" onClick={onClose}>
                   Cancelar
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={issue.isPending}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={issue.isPending || duePast}
+                >
                   {issue.isPending ? "Enviando…" : "Solicitar"}
                 </button>
               </div>

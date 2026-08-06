@@ -32,13 +32,48 @@ export const CUSTODY_STATUS: Record<Custody["status"], { label: string; cls: str
   lost: { label: "Extraviada", cls: "bg-red-lt" },
 };
 
-export function useCustodies(asset?: string) {
+export interface CustodyFilters {
+  asset?: string;
+  status?: string;
+  q?: string;
+  page?: number;
+}
+
+export function useCustodies(filters: CustodyFilters = {}) {
+  const { asset, status, q, page } = filters;
   return useQuery({
-    queryKey: ["custodies", asset ?? "all"],
+    queryKey: [
+      "custodies",
+      { asset: asset ?? null, status: status ?? null, q: q ?? null, page: page ?? 1 },
+    ],
     queryFn: async () => {
-      const q = asset ? `?asset=${asset}` : "";
-      return (await api.get<Paginated<Custody>>(`/custodies${q}`)).data;
+      const params = new URLSearchParams();
+      if (asset) params.set("asset", asset);
+      if (status) params.set("status", status);
+      if (q) params.set("q", q);
+      if (page) params.set("page", String(page));
+      const qs = params.toString();
+      return (await api.get<Paginated<Custody>>(`/custodies${qs ? `?${qs}` : ""}`)).data;
     },
+    placeholderData: (prev) => prev, // evita "piscar" ao paginar/filtrar
+  });
+}
+
+export interface CustodyStats {
+  pending: number;
+  active: number;
+  rejected: number;
+  returned: number;
+  overdue: number;
+  lost: number;
+  total: number;
+  open: number;
+}
+
+export function useCustodyStats() {
+  return useQuery({
+    queryKey: ["custody-stats"],
+    queryFn: async () => (await api.get<CustodyStats>("/custodies/stats")).data,
   });
 }
 
@@ -58,6 +93,7 @@ export function useIssueCustody() {
       (await api.post<Custody>("/custodies", payload)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["custodies"] });
+      qc.invalidateQueries({ queryKey: ["custody-stats"] });
       qc.invalidateQueries({ queryKey: ["assets"] });
       qc.invalidateQueries({ queryKey: ["bookings"] });
     },
@@ -71,6 +107,7 @@ function useCustodyAction(action: "approve" | "reject") {
       (await api.post<Custody>(`/custodies/${id}/${action}`)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["custodies"] });
+      qc.invalidateQueries({ queryKey: ["custody-stats"] });
       qc.invalidateQueries({ queryKey: ["assets"] });
     },
   });
@@ -85,7 +122,10 @@ export function useDeleteCustody() {
     mutationFn: async (id: string) => {
       await api.delete(`/custodies/${id}`);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["custodies"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["custodies"] });
+      qc.invalidateQueries({ queryKey: ["custody-stats"] });
+    },
   });
 }
 
@@ -102,6 +142,7 @@ export function useReturnCustody() {
       (await api.post<Custody>(`/custodies/${id}/return`, body)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["custodies"] });
+      qc.invalidateQueries({ queryKey: ["custody-stats"] });
       qc.invalidateQueries({ queryKey: ["assets"] });
     },
   });
