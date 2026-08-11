@@ -17,6 +17,7 @@ class RoleCode(models.TextChoices):
     INVENTORY = "inventory", "Inventariante"
     USER = "user", "Usuário"
     AUDITOR = "auditor", "Auditor"
+    BARBERSHOP = "barbershop", "Administrador da Barbearia"
 
 
 class Role(TimeStampedModel):

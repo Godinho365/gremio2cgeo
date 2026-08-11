@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from django.utils import timezone
 from rest_framework import serializers
 
-from ..models import Acquisition, Asset, Category, FloorPlan, Location, Supplier
+from apps.custody.models import OPEN_CUSTODY_STATUSES
+from apps.scheduling.models import BookingStatus
+
+from ..models import Acquisition, Asset, Category, Location, Supplier
 
 
 class TenantRelationsMixin:
@@ -18,22 +22,34 @@ class TenantRelationsMixin:
                 field.queryset = model.objects.for_current_tenant().alive()  # type: ignore[attr-defined]
 
 
-class CategorySerializer(TenantRelationsMixin, serializers.ModelSerializer):
+class AssetCountMixin:
+    """Quantos bens usam este registro — a tela precisa saber antes de excluir."""
+
+    def get_asset_count(self, obj: object) -> int:
+        annotated = getattr(obj, "asset_count", None)
+        if annotated is not None:
+            return int(annotated)
+        return obj.assets.filter(deleted_at__isnull=True).count()  # type: ignore[attr-defined]
+
+
+class CategorySerializer(AssetCountMixin, TenantRelationsMixin, serializers.ModelSerializer):
     tenant_scoped_fields = {"parent": Category}
+    asset_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Category
-        fields = ["id", "name", "parent", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        fields = ["id", "name", "parent", "asset_count", "created_at"]
+        read_only_fields = ["id", "asset_count", "created_at"]
 
 
-class LocationSerializer(TenantRelationsMixin, serializers.ModelSerializer):
+class LocationSerializer(AssetCountMixin, TenantRelationsMixin, serializers.ModelSerializer):
     tenant_scoped_fields = {"parent": Location}
+    asset_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Location
-        fields = ["id", "name", "type", "parent", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        fields = ["id", "name", "type", "parent", "asset_count", "created_at"]
+        read_only_fields = ["id", "asset_count", "created_at"]
 
 
 class SupplierSerializer(serializers.ModelSerializer):
@@ -55,6 +71,9 @@ class AcquisitionSerializer(TenantRelationsMixin, serializers.ModelSerializer):
 class AssetSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source="category.name", read_only=True, default=None)
     location_name = serializers.CharField(source="location.name", read_only=True, default=None)
+    has_open_custody = serializers.SerializerMethodField()
+    is_reserved_now = serializers.SerializerMethodField()
+    has_upcoming_booking = serializers.SerializerMethodField()
 
     class Meta:
         model = Asset
@@ -73,11 +92,41 @@ class AssetSerializer(serializers.ModelSerializer):
             "acquisition_value",
             "protection_notes",
             "is_bookable",
-            "plan_x",
-            "plan_y",
+            "photo_data",
+            "has_open_custody",
+            "is_reserved_now",
+            "has_upcoming_booking",
             "created_at",
         ]
         read_only_fields = ["id", "asset_tag", "status", "created_at"]
+
+    def get_has_open_custody(self, obj: Asset) -> bool:
+        """Anotado pela listagem; nas demais respostas cai na consulta direta."""
+        annotated = getattr(obj, "has_open_custody", None)
+        if annotated is not None:
+            return bool(annotated)
+        return obj.custodies.filter(
+            status__in=OPEN_CUSTODY_STATUSES, deleted_at__isnull=True
+        ).exists()
+
+    def get_is_reserved_now(self, obj: Asset) -> bool:
+        """Reserva aprovada cobrindo este momento — o bem já está com a pessoa."""
+        annotated = getattr(obj, "is_reserved_now", None)
+        if annotated is not None:
+            return bool(annotated)
+        now = timezone.now()
+        return self._approved(obj).filter(start_at__lte=now, end_at__gt=now).exists()
+
+    def get_has_upcoming_booking(self, obj: Asset) -> bool:
+        """Reserva aprovada que ainda vai começar."""
+        annotated = getattr(obj, "has_upcoming_booking", None)
+        if annotated is not None:
+            return bool(annotated)
+        return self._approved(obj).filter(start_at__gt=timezone.now()).exists()
+
+    @staticmethod
+    def _approved(obj: Asset):
+        return obj.bookings.filter(status=BookingStatus.APPROVED, deleted_at__isnull=True)
 
 
 class AssetUpdateSerializer(TenantRelationsMixin, serializers.ModelSerializer):
@@ -102,16 +151,8 @@ class AssetUpdateSerializer(TenantRelationsMixin, serializers.ModelSerializer):
             "acquisition_value",
             "protection_notes",
             "is_bookable",
-            "plan_x",
-            "plan_y",
+            "photo_data",
         ]
-
-
-class FloorPlanSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = FloorPlan
-        fields = ["id", "name", "image_data", "updated_at"]
-        read_only_fields = ["id", "updated_at"]
 
 
 class AssetCreateSerializer(TenantRelationsMixin, serializers.ModelSerializer):
@@ -136,4 +177,5 @@ class AssetCreateSerializer(TenantRelationsMixin, serializers.ModelSerializer):
             "acquisition_value",
             "protection_notes",
             "is_bookable",
+            "photo_data",
         ]

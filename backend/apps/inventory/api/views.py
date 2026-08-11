@@ -16,6 +16,7 @@ from ..services import InventoryService
 from .serializers import (
     InventoryItemSerializer,
     InventorySerializer,
+    InventoryUpdateSerializer,
     OpenInventorySerializer,
     ScanSerializer,
 )
@@ -46,6 +47,30 @@ class InventoryViewSet(TenantScopedViewSet):
             title=payload.validated_data["title"], responsible_id=str(request.user.pk)
         )
         return Response(InventorySerializer(inv).data, status=201)
+
+    @extend_schema(request=InventoryUpdateSerializer, responses={200: InventorySerializer})
+    def update(self, request: Request, *args: object, **kwargs: object) -> Response:
+        if not _can_inventory(request.user):
+            raise BusinessRuleError("Sem permissão para editar inventário.", code="forbidden")
+        payload = InventoryUpdateSerializer(data=request.data, partial=True)
+        payload.is_valid(raise_exception=True)
+        inv = self.service.rename_inventory(
+            inventory_id=self.get_object().pk,
+            title=payload.validated_data["title"],
+            actor_id=str(request.user.pk),
+        )
+        return Response(InventorySerializer(inv).data)
+
+    def partial_update(self, request: Request, *args: object, **kwargs: object) -> Response:
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request: Request, *args: object, **kwargs: object) -> Response:
+        if not _can_inventory(request.user):
+            raise BusinessRuleError("Sem permissão para excluir inventário.", code="forbidden")
+        self.service.delete_inventory(
+            inventory_id=self.get_object().pk, actor_id=str(request.user.pk)
+        )
+        return Response(status=204)
 
     @extend_schema(responses={200: InventoryItemSerializer(many=True)})
     @action(detail=True, methods=["get"])

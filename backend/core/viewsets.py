@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from django.utils import timezone
 from rest_framework import viewsets
+from rest_framework.views import APIView
 
 from core.context import get_current_tenant_id, set_current_tenant_id
 
@@ -19,6 +20,19 @@ if TYPE_CHECKING:
     from django.db import models
     from rest_framework.request import Request
     from rest_framework.serializers import BaseSerializer
+
+
+class TenantContextAPIView(APIView):
+    """APIView que fixa o tenant do usuário no contexto (auditoria e queries).
+
+    Toda view que toca dado com escopo de organização precisa disto: sem o
+    tenant no contexto, o repositório recusa a consulta em vez de devolver
+    dados de outra organização.
+    """
+
+    def initial(self, request: Request, *args: object, **kwargs: object) -> None:
+        super().initial(request, *args, **kwargs)
+        set_current_tenant_id(getattr(request.user, "tenant_id", None))
 
 
 class TenantScopedViewSet(viewsets.ModelViewSet):

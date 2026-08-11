@@ -18,6 +18,8 @@ class InventoryStatus(models.TextChoices):
 
 class Inventory(TenantScopedModel):
     title = models.CharField(max_length=255)
+    # Conferência é mensal: guarda o 1º dia do mês conferido.
+    reference_month = models.DateField(null=True, blank=True)
     status = models.CharField(
         max_length=20, choices=InventoryStatus.choices, default=InventoryStatus.OPEN
     )

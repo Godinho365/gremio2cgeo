@@ -22,9 +22,18 @@ class UserRepository:
     def all(self) -> models.QuerySet[User]:
         return self.query().order_by("username")
 
-    def username_taken(self, username: str) -> bool:
+    def username_taken(self, username: str, exclude_id: object = None) -> bool:
         # username is globally unique in Django's default auth (see TODO in models).
-        return User.objects.filter(username=username).exists()
+        qs = User.objects.filter(username=username)
+        return qs.exclude(pk=exclude_id).exists() if exclude_id else qs.exists()
+
+    def email_taken(self, email: str, exclude_id: object = None) -> bool:
+        qs = User.objects.filter(email__iexact=email)
+        return qs.exclude(pk=exclude_id).exists() if exclude_id else qs.exists()
+
+    def cpf_taken(self, cpf: str, exclude_id: object = None) -> bool:
+        qs = User.objects.filter(cpf=cpf)
+        return qs.exclude(pk=exclude_id).exists() if exclude_id else qs.exists()
 
 
 class RoleRepository:

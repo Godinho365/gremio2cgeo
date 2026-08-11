@@ -1,7 +1,7 @@
 """Sprint 3: reservas com anti-sobreposição (RN-B1), aprovação e cancelamento."""
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from rest_framework.test import APIClient
@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 from apps.accounts.models import RoleCode
 from apps.accounts.services import OnboardingService, UserService
 from apps.assets.services import AssetService
-from apps.scheduling.models import BookingStatus
+from apps.scheduling.models import Booking, BookingStatus
 from core.context import use_tenant
 
 pytestmark = pytest.mark.django_db
@@ -22,7 +22,9 @@ def _org(name: str):
 
 
 def _dt(day: int, hour: int) -> str:
-    return datetime(2026, 8, day, hour, 0, tzinfo=UTC).isoformat()
+    """Data futura: `day` é o deslocamento em dias a partir de hoje (reserva no passado é rejeitada)."""
+    base = datetime.now(UTC) + timedelta(days=day)
+    return base.replace(hour=hour, minute=0, second=0, microsecond=0).isoformat()
 
 
 @pytest.fixture
@@ -120,6 +122,145 @@ def test_cancelled_slot_frees_up(client: APIClient):
         format="json",
     )
     assert resp.status_code == 201
+
+
+def test_cancel_is_restricted_to_owner_or_manager(client: APIClient):
+    """Dono cancela a própria; terceiro não mexe na reserva alheia; gestor cancela qualquer uma."""
+    tenant, admin = _org("bk6")
+    asset = _asset(tenant)
+    with use_tenant(tenant.id):
+        dono = UserService().create_user(
+            username="dono6", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+        outro = UserService().create_user(
+            username="outro6", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+
+    client.force_authenticate(dono)
+    bid = client.post(
+        "/api/bookings",
+        {"asset": str(asset.id), "start_at": _dt(5, 10), "end_at": _dt(5, 12)},
+        format="json",
+    ).data["id"]
+
+    client.force_authenticate(outro)
+    recusado = client.post(f"/api/bookings/{bid}/cancel")
+    assert recusado.status_code == 422
+    assert recusado.data["error"]["code"] == "forbidden"
+
+    client.force_authenticate(dono)
+    assert client.post(f"/api/bookings/{bid}/cancel").status_code == 200
+
+    # gestor cancela reserva de terceiro
+    client.force_authenticate(dono)
+    outro_id = client.post(
+        "/api/bookings",
+        {"asset": str(asset.id), "start_at": _dt(6, 10), "end_at": _dt(6, 12)},
+        format="json",
+    ).data["id"]
+    client.force_authenticate(admin)
+    assert client.post(f"/api/bookings/{outro_id}/cancel").status_code == 200
+
+
+def test_upcoming_filter_hides_finished_bookings(client: APIClient):
+    """A fila de reservas (dashboard/cautelas) não pode encher de reservas já encerradas."""
+    tenant, admin = _org("bk7")
+    asset = _asset(tenant)
+    client.force_authenticate(admin)
+    futura = client.post(
+        "/api/bookings",
+        {"asset": str(asset.id), "start_at": _dt(7, 10), "end_at": _dt(8, 12)},
+        format="json",
+    ).data
+    # encerrada: criada pelo service para poder ficar no passado
+    with use_tenant(tenant.id):
+        antiga = Booking.objects.create(
+            tenant_id=tenant.id,
+            asset=asset,
+            requester=admin,
+            start_at=datetime.now(UTC) - timedelta(days=5),
+            end_at=datetime.now(UTC) - timedelta(days=4),
+            status=BookingStatus.APPROVED,
+        )
+
+    todas = {b["id"] for b in client.get("/api/bookings").data["results"]}
+    assert {futura["id"], str(antiga.id)} <= todas
+
+    em_curso = {b["id"] for b in client.get("/api/bookings?upcoming=1").data["results"]}
+    assert futura["id"] in em_curso
+    assert str(antiga.id) not in em_curso
+
+
+def test_manager_books_for_another_user(client: APIClient):
+    tenant, admin = _org("bk8")
+    asset = _asset(tenant)
+    with use_tenant(tenant.id):
+        beneficiario = UserService().create_user(
+            username="benef8", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    resp = client.post(
+        "/api/bookings",
+        {
+            "asset": str(asset.id),
+            "requester": str(beneficiario.id),
+            "start_at": _dt(9, 10),
+            "end_at": _dt(9, 12),
+        },
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    assert resp.data["requester"] == str(beneficiario.id)
+    # gestor segue podendo aprovar a reserva que abriu para o outro
+    assert client.post(f"/api/bookings/{resp.data['id']}/approve").status_code == 200
+
+
+def test_plain_user_cannot_book_for_another(client: APIClient):
+    tenant, admin = _org("bk9")
+    asset = _asset(tenant)
+    with use_tenant(tenant.id):
+        comum = UserService().create_user(
+            username="comum9", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(comum)
+    resp = client.post(
+        "/api/bookings",
+        {
+            "asset": str(asset.id),
+            "requester": str(admin.id),  # tentando reservar em nome do admin
+            "start_at": _dt(10, 10),
+            "end_at": _dt(10, 12),
+        },
+        format="json",
+    )
+    assert resp.status_code == 422
+    assert resp.data["error"]["code"] == "forbidden"
+
+
+def test_delete_booking_is_manager_only(client: APIClient):
+    tenant, admin = _org("bk10")
+    asset = _asset(tenant)
+    with use_tenant(tenant.id):
+        comum = UserService().create_user(
+            username="comum10", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(comum)
+    bid = client.post(
+        "/api/bookings",
+        {"asset": str(asset.id), "start_at": _dt(11, 10), "end_at": _dt(11, 12)},
+        format="json",
+    ).data["id"]
+
+    assert client.delete(f"/api/bookings/{bid}").status_code == 422  # dono não exclui
+
+    client.force_authenticate(admin)
+    assert client.delete(f"/api/bookings/{bid}").status_code == 204
+    assert bid not in {b["id"] for b in client.get("/api/bookings").data["results"]}
 
 
 def test_bookings_are_tenant_scoped(client: APIClient):

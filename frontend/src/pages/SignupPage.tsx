@@ -1,39 +1,12 @@
-import { IconBuildingWarehouse, IconEye, IconEyeOff } from "@tabler/icons-react";
+import { IconEye, IconEyeOff } from "@tabler/icons-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
+import { ORG_NAME } from "../branding";
+import Brand from "../components/Brand";
 import { MILITARY_RANKS, useSignup } from "../features/accounts/api";
-
-const onlyDigits = (s: string) => s.replace(/\D/g, "");
-
-function maskCpf(s: string): string {
-  return onlyDigits(s)
-    .slice(0, 11)
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
-}
-
-function maskPhone(s: string): string {
-  const d = onlyDigits(s).slice(0, 11);
-  if (d.length <= 10) {
-    return d.replace(/(\d{2})(\d)/, "($1) $2").replace(/(\d{4})(\d)/, "$1-$2");
-  }
-  return d.replace(/(\d{2})(\d)/, "($1) $2").replace(/(\d{5})(\d)/, "$1-$2");
-}
-
-function cpfValid(s: string): boolean {
-  const c = onlyDigits(s);
-  if (c.length !== 11 || /^(\d)\1{10}$/.test(c)) return false;
-  for (const len of [9, 10]) {
-    let total = 0;
-    for (let i = 0; i < len; i++) total += Number(c[i]) * (len + 1 - i);
-    const dv = ((total * 10) % 11) % 10;
-    if (dv !== Number(c[len])) return false;
-  }
-  return true;
-}
+import { cpfValid, maskCpf, maskPhone } from "../lib/masks";
 
 export default function SignupPage() {
   const signup = useSignup();
@@ -105,10 +78,7 @@ export default function SignupPage() {
     <div className="page page-center">
       <div className="container container-tight py-4">
         <div className="text-center mb-4">
-          <span className="d-inline-flex align-items-center gap-2">
-            <IconBuildingWarehouse size={34} className="text-primary" />
-            <span className="h1 fw-bold mb-0">Patrimonia</span>
-          </span>
+          <Brand title={ORG_NAME} size="lg" stacked />
           <div className="text-secondary mt-1">Criar conta</div>
         </div>
         <div className="card card-md">

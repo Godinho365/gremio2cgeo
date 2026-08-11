@@ -19,8 +19,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
-    "pytest-django>=4.8",
+    # Tetos obrigatórios. Sem eles, uma reconstrução da imagem puxa a versão
+    # mais nova e a suíte quebra inteira no setup: o pytest-django 4.13 lê
+    # PytestDjangoTestCase._pre_setup_ran_eagerly, que só existe em Django
+    # mais novo que o 5.1 usado aqui. Ao subir o Django, revise estes limites.
+    "pytest>=8.0,<9",
+    "pytest-django>=4.8,<4.13",
     "factory-boy>=3.3",
     "ruff>=0.6",
     "mypy>=1.11",
@@ -51,6 +55,7 @@ django_settings_module = "config.settings.dev"
 DJANGO_SETTINGS_MODULE = "config.settings.dev"
 python_files = ["test_*.py", "tests.py"]
 addopts = "-q --reuse-db"
+markers = ["no_pix: roda como se o Mercado Pago não estivesse configurado"]
 
 [tool.setuptools.packages.find]
 include = ["config*", "core*", "apps*"]

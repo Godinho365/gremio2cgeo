@@ -2,17 +2,28 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from apps.accounts.api.views import MeView, SignupView, TenantTokenView, UserViewSet
+from apps.accounts.api.views import (
+    MePasswordView,
+    MeView,
+    SignupView,
+    TenantTokenView,
+    UserViewSet,
+)
 from apps.assets.api.views import (
     AcquisitionViewSet,
     AssetViewSet,
     CategoryViewSet,
-    FloorPlanViewSet,
     LocationViewSet,
     SupplierViewSet,
 )
+from apps.barbershop.api.views import AppointmentViewSet, BarberViewSet
 from apps.custody.api.views import CustodyViewSet
 from apps.inventory.api.views import InventoryViewSet
+from apps.payments.api.views import (
+    CreditView,
+    MercadoPagoWebhookView,
+    PaymentConfigView,
+)
 from apps.scheduling.api.views import AvailabilityViewSet, BookingViewSet
 
 app_name = "api"
@@ -24,15 +35,24 @@ router.register("categories", CategoryViewSet, basename="category")
 router.register("locations", LocationViewSet, basename="location")
 router.register("suppliers", SupplierViewSet, basename="supplier")
 router.register("acquisitions", AcquisitionViewSet, basename="acquisition")
-router.register("floorplans", FloorPlanViewSet, basename="floorplan")
 router.register("availabilities", AvailabilityViewSet, basename="availability")
 router.register("bookings", BookingViewSet, basename="booking")
 router.register("custodies", CustodyViewSet, basename="custody")
 router.register("inventories", InventoryViewSet, basename="inventory")
+router.register("barbers", BarberViewSet, basename="barber")
+router.register("appointments", AppointmentViewSet, basename="appointment")
 
 urlpatterns = [
+    path(
+        "webhooks/mercadopago",
+        MercadoPagoWebhookView.as_view(),
+        name="mercadopago_webhook",
+    ),
+    path("payments/config", PaymentConfigView.as_view(), name="payments_config"),
+    path("credits", CreditView.as_view(), name="credits"),
     path("auth/signup", SignupView.as_view(), name="signup"),
     path("auth/me", MeView.as_view(), name="me"),
+    path("auth/me/password", MePasswordView.as_view(), name="me_password"),
     path("auth/token", TenantTokenView.as_view(), name="token_obtain_pair"),
     path("auth/token/refresh", TokenRefreshView.as_view(), name="token_refresh"),
     *router.urls,

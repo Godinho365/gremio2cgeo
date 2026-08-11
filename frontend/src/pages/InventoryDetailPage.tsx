@@ -1,6 +1,8 @@
+import { IconUser } from "@tabler/icons-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import Pagination from "../components/Pagination";
 import { CONDITIONS, useLocations } from "../features/assets/api";
 import {
   DISCREPANCY_META,
@@ -11,6 +13,9 @@ import {
   useInventoryReport,
   useScanItem,
 } from "../features/inventory/api";
+
+/** Itens por página na conferência. */
+const POR_PAGINA = 9;
 
 function ScanModal({
   inventoryId,
@@ -117,9 +122,19 @@ export default function InventoryDetailPage() {
   const report = useInventoryReport(id);
   const close = useCloseInventory(id);
   const [scanning, setScanning] = useState<InventoryItem | null>(null);
+  const [pagina, setPagina] = useState(1);
 
   const inv = inventories.data?.results.find((i) => i.id === id);
   const isOpen = inv?.status === "open";
+
+  // A conferência é longa: pagina de 9 em 9 sobre a lista já carregada.
+  const todosItens = items.data ?? [];
+  const totalPaginas = Math.max(1, Math.ceil(todosItens.length / POR_PAGINA));
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const itensNaPagina = todosItens.slice(
+    (paginaAtual - 1) * POR_PAGINA,
+    paginaAtual * POR_PAGINA,
+  );
 
   return (
     <>
@@ -167,16 +182,28 @@ export default function InventoryDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {items.data?.map((it) => {
+              {itensNaPagina.map((it) => {
                 const meta = DISCREPANCY_META[it.discrepancy];
                 return (
                   <tr key={it.id}>
                     <td>
                       <div>{it.asset_name}</div>
-                      <div className="text-secondary small">{it.asset_tag}</div>
+                      <div className="asset-tag">{it.asset_tag}</div>
                     </td>
                     <td>{it.expected_location_name ?? "—"}</td>
-                    <td>{it.found ? (it.found_location_name ?? "—") : "—"}</td>
+                    <td>
+                      {/* Bem que está com alguém: o portador é o local. */}
+                      {it.holder_name ? (
+                        <span className="d-inline-flex align-items-center gap-1">
+                          <IconUser size={14} className="text-secondary" />
+                          <span>Com {it.holder_name}</span>
+                        </span>
+                      ) : it.found ? (
+                        (it.found_location_name ?? "—")
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td>
                       {it.found ? (
                         <span className={`badge ${meta.cls}`}>{meta.label}</span>
@@ -200,6 +227,16 @@ export default function InventoryDetailPage() {
             </tbody>
           </table>
         </div>
+
+        {todosItens.length > POR_PAGINA && (
+          <Pagination
+            page={paginaAtual}
+            count={todosItens.length}
+            label={{ one: "bem", many: "bens" }}
+            pageSize={POR_PAGINA}
+            onChange={setPagina}
+          />
+        )}
       </div>
 
       {scanning && (

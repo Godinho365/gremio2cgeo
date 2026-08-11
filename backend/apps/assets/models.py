@@ -120,9 +120,9 @@ class Asset(TenantScopedModel):
     acquisition_value = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     protection_notes = models.TextField(blank=True)  # Art.30 c
     is_bookable = models.BooleanField(default=True)
-    # Posição do bem na planta da sala (0..1 relativo à imagem). Null = não posicionado.
-    plan_x = models.FloatField(null=True, blank=True)
-    plan_y = models.FloatField(null=True, blank=True)
+    # Foto do bem para o catálogo. Data URI (base64): evita dependência de
+    # storage/Pillow. Reduzida no upload (ver lib/image.ts).
+    photo_data = models.TextField(blank=True)
 
     class Meta:
         db_table = "asset"
@@ -134,19 +134,3 @@ class Asset(TenantScopedModel):
 
     def __str__(self) -> str:
         return f"{self.asset_tag} — {self.name}"
-
-
-class FloorPlan(TenantScopedModel):
-    """Planta (imagem) da sala/organização. Uma por tenant no MVP.
-
-    Guarda a imagem como data URI (base64) para evitar dependência de storage/Pillow.
-    """
-
-    name = models.CharField(max_length=120, default="Planta")
-    image_data = models.TextField()  # data:image/...;base64,...
-
-    class Meta:
-        db_table = "floor_plan"
-
-    def __str__(self) -> str:
-        return self.name

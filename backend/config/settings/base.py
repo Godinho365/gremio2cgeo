@@ -33,6 +33,8 @@ INSTALLED_APPS = [
     "apps.scheduling",
     "apps.custody",
     "apps.inventory",
+    "apps.barbershop",
+    "apps.payments",
 ]
 
 MIDDLEWARE = [
@@ -101,7 +103,7 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "DEFAULT_PAGINATION_CLASS": "core.pagination.DefaultPagination",
     "PAGE_SIZE": 25,
     "EXCEPTION_HANDLER": "core.exceptions.api_exception_handler",
 }
@@ -122,6 +124,8 @@ SPECTACULAR_SETTINGS = {
         "BookingStatusEnum": "apps.scheduling.models.BookingStatus",
         "CustodyStatusEnum": "apps.custody.models.CustodyStatus",
         "InventoryStatusEnum": "apps.inventory.models.InventoryStatus",
+        "AppointmentStatusEnum": "apps.barbershop.models.AppointmentStatus",
+        "PaymentStatusEnum": "apps.payments.models.PaymentStatus",
     },
 }
 
@@ -130,6 +134,9 @@ CELERY_BROKER_URL = env("REDIS_URL", default="redis://redis:6379/0")
 CELERY_RESULT_BACKEND = env("REDIS_URL", default="redis://redis:6379/0")
 CELERY_TASK_TRACK_STARTED = True
 
+# De quanto em quanto o servidor pergunta ao provedor se o Pix caiu.
+PIX_SYNC_SECONDS = env.int("PIX_SYNC_SECONDS", default=60)
+
 # Jobs periódicos (Celery beat).
 CELERY_BEAT_SCHEDULE = {
     # RN-C4: marca cautelas vencidas como 'atrasada' de hora em hora.
@@ -137,6 +144,28 @@ CELERY_BEAT_SCHEDULE = {
         "task": "custody.mark_overdue_custodies",
         "schedule": crontab(minute=0),
     },
+    # RN-BB8: confirma o Pix e libera o horário mesmo com a tela fechada. É o
+    # que substitui o webhook quando não há endereço público para recebê-lo.
+    "sync-pending-payments": {
+        "task": "payments.sync_pending_payments",
+        "schedule": PIX_SYNC_SECONDS,
+    },
 }
 
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:5173"])
+
+# ── Pagamentos (Mercado Pago) ────────────────────────────────────────────────
+# O access token e o segredo do webhook saem do painel do Mercado Pago em
+# "Suas integrações". Sem token, o Pix fica desligado e o sistema avisa em vez
+# de quebrar. Sem segredo, todo webhook é recusado — de propósito.
+MERCADOPAGO_ACCESS_TOKEN = env("MERCADOPAGO_ACCESS_TOKEN", default="")
+MERCADOPAGO_WEBHOOK_SECRET = env("MERCADOPAGO_WEBHOOK_SECRET", default="")
+# URL pública deste backend para o Mercado Pago avisar. Vazio = só consulta ativa.
+MERCADOPAGO_NOTIFICATION_URL = env("MERCADOPAGO_NOTIFICATION_URL", default="")
+# Quanto tempo o Pix (e o horário que ele segura) vale.
+PIX_EXPIRY_MINUTES = env.int("PIX_EXPIRY_MINUTES", default=15)
+# Quanto custa o corte avulso. Use "1.00" para ensaiar a cobrança com dinheiro
+# real sem gastar. O valor fica congelado em cada agendamento já feito.
+WALK_IN_PRICE = env("WALK_IN_PRICE", default="15.00")
+# Só para apontar a um ambiente de ensaio; vazio = API real do Mercado Pago.
+MERCADOPAGO_API_BASE = env("MERCADOPAGO_API_BASE", default="")

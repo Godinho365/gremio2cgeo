@@ -45,6 +45,7 @@ class CustodyIssueSerializer(serializers.Serializer):
     booking = serializers.PrimaryKeyRelatedField(
         queryset=Booking.objects.none(), required=False, allow_null=True
     )
+    issued_at = serializers.DateTimeField(required=False, allow_null=True, default=None)
     due_at = serializers.DateTimeField()
     condition_out = serializers.ChoiceField(choices=AssetCondition.choices)
     notes = serializers.CharField(required=False, allow_blank=True, default="")

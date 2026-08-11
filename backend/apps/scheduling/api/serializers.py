@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from apps.accounts.models import User
 from apps.assets.api.serializers import TenantRelationsMixin
 from apps.assets.models import Asset
+from core.context import get_current_tenant_id
 
 from ..models import Availability, Booking
 
@@ -41,8 +43,20 @@ class BookingSerializer(serializers.ModelSerializer):
 
 
 class BookingCreateSerializer(TenantRelationsMixin, serializers.ModelSerializer):
+    """`requester` só é aceito de Admin/Diretor (reserva em nome de outro)."""
+
     tenant_scoped_fields = {"asset": Asset}
+    requester = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.none(), required=False, allow_null=True
+    )
 
     class Meta:
         model = Booking
-        fields = ["asset", "start_at", "end_at", "notes"]
+        fields = ["asset", "requester", "start_at", "end_at", "notes"]
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        tenant_id = get_current_tenant_id()
+        self.fields["requester"].queryset = (  # type: ignore[attr-defined]
+            User.objects.filter(tenant_id=tenant_id) if tenant_id else User.objects.none()
+        )

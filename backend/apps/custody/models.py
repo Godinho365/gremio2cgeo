@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from apps.assets.models import Asset, AssetCondition
 from apps.scheduling.models import Booking
@@ -36,7 +37,8 @@ class Custody(TenantScopedModel):
     issued_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="issued_custodies"
     )
-    issued_at = models.DateTimeField(auto_now_add=True)
+    # Data da entrega do bem — informada pelo gestor (por padrão, hoje).
+    issued_at = models.DateTimeField(default=timezone.now)
     due_at = models.DateTimeField()
     condition_out = models.CharField(max_length=20, choices=AssetCondition.choices)
     status = models.CharField(

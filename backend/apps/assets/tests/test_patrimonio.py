@@ -98,6 +98,263 @@ def test_edit_asset_updates_status_and_name(client: APIClient):
     assert resp.data["status"] == "maintenance"
 
 
+def _plain_user(tenant, suffix: str):
+    with use_tenant(tenant.id):
+        return UserService().create_user(
+            username=f"plain_{suffix}", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+
+
+def test_plain_user_can_read_catalog_categories(client: APIClient):
+    """O catálogo do usuário comum filtra por categoria — leitura tem de ser liberada."""
+    tenant, admin = _org("catalogo")
+    client.force_authenticate(admin)
+    client.post("/api/categories", {"name": "Áudio e Vídeo"}, format="json")
+    client.force_authenticate(_plain_user(tenant, "cat"))
+    resp = client.get("/api/categories")
+    assert resp.status_code == 200
+    assert {c["name"] for c in resp.data["results"]} == {"Áudio e Vídeo"}
+
+
+def test_asset_list_filters_by_category_and_search(client: APIClient):
+    tenant, admin = _org("filtros")
+    client.force_authenticate(admin)
+    ti = client.post("/api/categories", {"name": "TI"}, format="json").data
+    moveis = client.post("/api/categories", {"name": "Móveis"}, format="json").data
+    client.post("/api/assets", {"name": "Notebook Dell", "category": ti["id"]}, format="json")
+    client.post("/api/assets", {"name": "Projetor Epson", "category": ti["id"]}, format="json")
+    client.post("/api/assets", {"name": "Cadeira", "category": moveis["id"]}, format="json")
+
+    client.force_authenticate(_plain_user(tenant, "filtros"))
+    por_categoria = client.get(f"/api/assets?category={ti['id']}")
+    assert {a["name"] for a in por_categoria.data["results"]} == {"Notebook Dell", "Projetor Epson"}
+
+    por_nome = client.get("/api/assets?q=cadeira")  # busca é case-insensitive
+    assert {a["name"] for a in por_nome.data["results"]} == {"Cadeira"}
+
+    combinado = client.get(f"/api/assets?category={ti['id']}&q=projetor")
+    assert {a["name"] for a in combinado.data["results"]} == {"Projetor Epson"}
+
+
+def test_asset_photo_is_saved_and_listed(client: APIClient):
+    tenant, admin = _org("foto")
+    client.force_authenticate(admin)
+    photo = "data:image/jpeg;base64,/9j/4AAQSkZJRg=="
+    created = client.post("/api/assets", {"name": "Bem com foto", "photo_data": photo}, format="json")
+    assert created.status_code == 201, created.data
+    client.force_authenticate(_plain_user(tenant, "foto"))
+    listed = client.get("/api/assets").data["results"][0]
+    assert listed["photo_data"] == photo
+
+
+def test_asset_reports_open_custody_for_catalog(client: APIClient):
+    """O catálogo mostra 'Cautelado' a partir deste campo — vale só para cautela em aberto."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    tenant, admin = _org("cautelado")
+    client.force_authenticate(admin)
+    livre = client.post("/api/assets", {"name": "Livre"}, format="json").data
+    ocupado = client.post("/api/assets", {"name": "Ocupado"}, format="json").data
+    holder = _plain_user(tenant, "cautelado")
+
+    payload = {
+        "asset": ocupado["id"],
+        "holder": str(holder.id),
+        "due_at": (timezone.now() + timedelta(days=2)).isoformat(),
+        "condition_out": "good",
+    }
+    # solicitação do usuário comum (pendente) ainda não ocupa o bem
+    client.force_authenticate(holder)
+    pedido = client.post("/api/custodies", payload, format="json").data
+    client.force_authenticate(admin)
+    by_id = {a["id"]: a for a in client.get("/api/assets").data["results"]}
+    assert by_id[ocupado["id"]]["has_open_custody"] is False
+
+    # entrega pelo gestor (aprovando a solicitação) ocupa
+    custody = client.post(f"/api/custodies/{pedido['id']}/approve").data
+    by_id = {a["id"]: a for a in client.get("/api/assets").data["results"]}
+    assert by_id[ocupado["id"]]["has_open_custody"] is True
+    assert by_id[livre["id"]]["has_open_custody"] is False
+
+    client.post(
+        f"/api/custodies/{custody['id']}/return",
+        {"condition_in": "good", "outcome": "ok"},
+        format="json",
+    )
+    by_id = {a["id"]: a for a in client.get("/api/assets").data["results"]}
+    assert by_id[ocupado["id"]]["has_open_custody"] is False
+
+
+def test_asset_reports_current_reservation_for_catalog(client: APIClient):
+    """Reserva aprovada em curso deixa o bem 'Reservado' no catálogo."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    tenant, admin = _org("reservado")
+    client.force_authenticate(admin)
+    bem = client.post("/api/assets", {"name": "Com reserva"}, format="json").data
+    outro = client.post("/api/assets", {"name": "Sem reserva"}, format="json").data
+    agora = timezone.now()
+
+    reserva = client.post(
+        "/api/bookings",
+        {
+            "asset": bem["id"],
+            "start_at": (agora - timedelta(hours=2)).isoformat(),
+            "end_at": (agora + timedelta(days=1)).isoformat(),
+        },
+        format="json",
+    ).data
+    # pendente ainda não ocupa
+    by_id = {a["id"]: a for a in client.get("/api/assets").data["results"]}
+    assert by_id[bem["id"]]["is_reserved_now"] is False
+
+    client.post(f"/api/bookings/{reserva['id']}/approve")
+    by_id = {a["id"]: a for a in client.get("/api/assets").data["results"]}
+    assert by_id[bem["id"]]["is_reserved_now"] is True
+    assert by_id[outro["id"]]["is_reserved_now"] is False
+
+    # reserva aprovada que ainda vai começar entra em outro campo
+    futura = client.post(
+        "/api/bookings",
+        {
+            "asset": outro["id"],
+            "start_at": (agora + timedelta(days=5)).isoformat(),
+            "end_at": (agora + timedelta(days=6)).isoformat(),
+        },
+        format="json",
+    ).data
+    client.post(f"/api/bookings/{futura['id']}/approve")
+    by_id = {a["id"]: a for a in client.get("/api/assets").data["results"]}
+    assert by_id[outro["id"]]["has_upcoming_booking"] is True
+    assert by_id[outro["id"]]["is_reserved_now"] is False
+    assert by_id[bem["id"]]["has_upcoming_booking"] is False
+
+    client.post(f"/api/bookings/{reserva['id']}/cancel")
+    by_id = {a["id"]: a for a in client.get("/api/assets").data["results"]}
+    assert by_id[bem["id"]]["is_reserved_now"] is False
+
+
+def test_asset_filters_by_status_and_location(client: APIClient):
+    tenant, admin = _org("filtro2")
+    client.force_authenticate(admin)
+    sala = client.post("/api/locations", {"name": "Sala 1", "type": "room"}, format="json").data
+    outra = client.post("/api/locations", {"name": "Sala 2", "type": "room"}, format="json").data
+    a1 = client.post("/api/assets", {"name": "Na sala 1", "location": sala["id"]}, format="json").data
+    client.post("/api/assets", {"name": "Na sala 2", "location": outra["id"]}, format="json")
+    client.patch(f"/api/assets/{a1['id']}", {"status": "maintenance"}, format="json")
+
+    por_local = client.get(f"/api/assets?location={sala['id']}").data["results"]
+    assert {a["name"] for a in por_local} == {"Na sala 1"}
+
+    por_situacao = client.get("/api/assets?status=maintenance").data["results"]
+    assert {a["name"] for a in por_situacao} == {"Na sala 1"}
+
+
+def test_asset_stats_counts_by_status(client: APIClient):
+    tenant, admin = _org("statsbens")
+    client.force_authenticate(admin)
+    a = client.post("/api/assets", {"name": "Um"}, format="json").data
+    client.post("/api/assets", {"name": "Dois"}, format="json")
+    client.patch(f"/api/assets/{a['id']}", {"status": "maintenance"}, format="json")
+
+    stats = client.get("/api/assets/stats").data
+    assert stats["total"] == 2
+    assert stats["available"] == 1
+    assert stats["maintenance"] == 1
+    assert stats["in_use"] == 0
+
+
+def test_delete_asset_removes_it_from_the_list(client: APIClient):
+    tenant, admin = _org("excluibem")
+    client.force_authenticate(admin)
+    bem = client.post("/api/assets", {"name": "Some daqui"}, format="json").data
+    assert client.delete(f"/api/assets/{bem['id']}").status_code == 204
+    assert bem["id"] not in {a["id"] for a in client.get("/api/assets").data["results"]}
+
+
+def test_delete_asset_is_manager_only(client: APIClient):
+    tenant, admin = _org("excluiperm")
+    client.force_authenticate(admin)
+    bem = client.post("/api/assets", {"name": "Protegido"}, format="json").data
+    client.force_authenticate(_plain_user(tenant, "excluiperm"))
+    assert client.delete(f"/api/assets/{bem['id']}").status_code == 403
+
+
+def test_cannot_delete_asset_that_is_out_on_custody(client: APIClient):
+    """Bem cautelado não sai do acervo: o termo de responsabilidade ficaria órfão."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    tenant, admin = _org("excluicautelado")
+    client.force_authenticate(admin)
+    bem = client.post("/api/assets", {"name": "Na mão de alguém"}, format="json").data
+    holder = _plain_user(tenant, "excluicautelado")
+    custody = client.post(
+        "/api/custodies",
+        {
+            "asset": bem["id"],
+            "holder": str(holder.id),
+            "due_at": (timezone.now() + timedelta(days=2)).isoformat(),
+            "condition_out": "good",
+        },
+        format="json",
+    ).data
+
+    recusado = client.delete(f"/api/assets/{bem['id']}")
+    assert recusado.status_code == 422
+    assert recusado.data["error"]["code"] == "asset_in_custody"
+
+    # depois da entrega registrada, exclui
+    client.post(
+        f"/api/custodies/{custody['id']}/return",
+        {"condition_in": "good", "outcome": "ok"},
+        format="json",
+    )
+    assert client.delete(f"/api/assets/{bem['id']}").status_code == 204
+
+
+def test_category_carries_asset_count_and_can_be_renamed(client: APIClient):
+    tenant, admin = _org("renomeia")
+    client.force_authenticate(admin)
+    cat = client.post("/api/categories", {"name": "TI"}, format="json").data
+    client.post("/api/assets", {"name": "Notebook", "category": cat["id"]}, format="json")
+
+    listada = client.get("/api/categories").data["results"][0]
+    assert listada["asset_count"] == 1
+
+    renomeada = client.patch(f"/api/categories/{cat['id']}", {"name": "Informática"}, format="json")
+    assert renomeada.status_code == 200
+    assert renomeada.data["name"] == "Informática"
+
+
+def test_cannot_delete_category_or_location_in_use(client: APIClient):
+    tenant, admin = _org("emuso")
+    client.force_authenticate(admin)
+    cat = client.post("/api/categories", {"name": "Em uso"}, format="json").data
+    loc = client.post("/api/locations", {"name": "Sala 3", "type": "room"}, format="json").data
+    bem = client.post(
+        "/api/assets",
+        {"name": "Ocupa os dois", "category": cat["id"], "location": loc["id"]},
+        format="json",
+    ).data
+
+    recusa_cat = client.delete(f"/api/categories/{cat['id']}")
+    assert recusa_cat.status_code == 422
+    assert recusa_cat.data["error"]["code"] == "in_use"
+    assert client.delete(f"/api/locations/{loc['id']}").status_code == 422
+
+    # sem o bem, os dois saem
+    client.delete(f"/api/assets/{bem['id']}")
+    assert client.delete(f"/api/categories/{cat['id']}").status_code == 204
+    assert client.delete(f"/api/locations/{loc['id']}").status_code == 204
+
+
 def test_qrcode_endpoint_returns_png(client: APIClient):
     tenant, admin = _org("qrorg")
     client.force_authenticate(admin)

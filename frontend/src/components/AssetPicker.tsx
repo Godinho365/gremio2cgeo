@@ -27,7 +27,7 @@ export interface AssetStateInfo {
   kind: AssetStateKind;
 }
 
-const STATE_META: Record<
+export const STATE_META: Record<
   AssetStateKind,
   { badge: string; label: string; line: string; dot: string; text: string }
 > = {

@@ -1,10 +1,10 @@
 import {
   IconAlertTriangle,
   IconArrowBackUp,
-  IconChevronLeft,
-  IconChevronRight,
+  IconCalendarEvent,
   IconClipboardCheck,
   IconClock,
+  IconPackage,
   IconPlus,
   IconSearch,
 } from "@tabler/icons-react";
@@ -13,37 +13,38 @@ import { Link } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import IssueCustodyModal from "../components/IssueCustodyModal";
-import { CONDITIONS } from "../features/assets/api";
+import BookingsCard, { type BookingScope, isInCourse } from "../components/BookingsCard";
+import Pagination from "../components/Pagination";
+import ReturnCustodyModal from "../components/ReturnCustodyModal";
 import {
   CUSTODY_STATUS,
   type Custody,
   type CustodyStats,
-  OUTCOMES,
-  type ReturnCustody,
   useApproveCustody,
   useCustodies,
   useCustodyStats,
   useDeleteCustody,
   useRejectCustody,
-  useReturnCustody,
 } from "../features/custody/api";
-
-const PAGE_SIZE = 25; // igual ao backend (REST_FRAMEWORK PAGE_SIZE)
+import { useBookings } from "../features/scheduling/api";
 
 function fmt(iso: string): string {
   return new Date(iso).toLocaleDateString("pt-BR");
 }
 
 // Cards de estatística (clicáveis → filtram por situação).
-const STAT_CARDS: {
+type StatCardDef = {
   key: keyof CustodyStats;
   status: Custody["status"];
   label: string;
   color: string;
   icon: typeof IconClock;
-}[] = [
-  { key: "pending", status: "pending", label: "Solicitadas", color: "#f59f00", icon: IconClock },
-  { key: "active", status: "active", label: "Ativas", color: "#2fb344", icon: IconClipboardCheck },
+};
+
+// O gestor entrega direto; "Solicitadas" só existe quando um usuário comum pede
+// um bem, então esse card só aparece se houver solicitação em aberto.
+const STAT_CARDS: StatCardDef[] = [
+  { key: "active", status: "active", label: "Entregues", color: "#2fb344", icon: IconClipboardCheck },
   { key: "overdue", status: "overdue", label: "Atrasadas", color: "#d63939", icon: IconAlertTriangle },
   {
     key: "returned",
@@ -54,86 +55,17 @@ const STAT_CARDS: {
   },
 ];
 
-function ReturnModal({ custody, onClose }: { custody: Custody; onClose: () => void }) {
-  const ret = useReturnCustody();
-  const [condition, setCondition] = useState("good");
-  const [outcome, setOutcome] = useState<ReturnCustody["outcome"]>("ok");
-  const [notes, setNotes] = useState("");
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    await ret.mutateAsync({ id: custody.id, condition_in: condition, outcome, notes });
-    onClose();
-  }
-
-  return (
-    <>
-      <div className="modal modal-blur show d-block" tabIndex={-1}>
-        <div className="modal-dialog modal-dialog-centered">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h5 className="modal-title">Devolução e inspeção — {custody.asset_name}</h5>
-              <button type="button" className="btn-close" onClick={onClose} />
-            </div>
-            <form onSubmit={submit}>
-              <div className="modal-body">
-                <div className="mb-3">
-                  <label className="form-label">Estado na devolução</label>
-                  <select
-                    className="form-select"
-                    value={condition}
-                    onChange={(e) => setCondition(e.target.value)}
-                  >
-                    {CONDITIONS.map((c) => (
-                      <option key={c.value} value={c.value}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="mb-3">
-                  <label className="form-label">Resultado da inspeção</label>
-                  <select
-                    className="form-select"
-                    value={outcome}
-                    onChange={(e) => setOutcome(e.target.value as ReturnCustody["outcome"])}
-                  >
-                    {OUTCOMES.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="mb-1">
-                  <label className="form-label">Observações</label>
-                  <textarea
-                    className="form-control"
-                    rows={2}
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-link" onClick={onClose}>
-                  Cancelar
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={ret.isPending}>
-                  {ret.isPending ? "Registrando…" : "Registrar devolução"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-      <div className="modal-backdrop fade show" />
-    </>
-  );
-}
+const PENDING_CARD: StatCardDef = {
+  key: "pending",
+  status: "pending",
+  label: "Solicitadas",
+  color: "#f59f00",
+  icon: IconClock,
+};
 
 function StatCard({
   label,
+  hint,
   value,
   color,
   icon,
@@ -142,6 +74,7 @@ function StatCard({
   onClick,
 }: {
   label: string;
+  hint?: string;
   value: number | undefined;
   color: string;
   icon: React.ReactNode;
@@ -173,6 +106,7 @@ function StatCard({
                 {loading ? <span className="placeholder col-4" /> : (value ?? 0)}
               </div>
               <div className="text-secondary">{label}</div>
+              {hint && <div className="text-secondary small">{hint}</div>}
             </div>
           </div>
         </div>
@@ -186,6 +120,8 @@ export default function CustodyPage() {
   const isManager = user?.roles.some((r) => r === "admin" || r === "director") ?? false;
 
   const [status, setStatus] = useState<string>("");
+  // Recorte vindo dos cards de reserva ("Ativos" e "Reservados").
+  const [scope, setScope] = useState<BookingScope>("all");
   const [qInput, setQInput] = useState("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
@@ -214,15 +150,33 @@ export default function CustodyPage() {
 
   const rows = data?.results ?? [];
   const count = data?.count ?? 0;
-  const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
-  const from = count === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const to = Math.min(page * PAGE_SIZE, count);
 
-  const hasFilter = !!status || !!q;
+  const hasFilter = !!status || !!q || scope !== "all";
+  // "Solicitadas" só entra na régua quando há pedido de usuário comum em aberto.
+  const pendingCount = stats.data?.pending ?? 0;
+  const cards = pendingCount > 0 ? [PENDING_CARD, ...STAT_CARDS] : STAT_CARDS;
+  // Reservas aprovadas: as que já começaram contam como bem em uso (igual à agenda).
+  const reserved = useBookings({ status: "approved", upcoming: true });
+  const approvedRows = reserved.data?.results ?? [];
+  const inCourseCount = approvedRows.filter(isInCourse).length;
+  const reservedCount = approvedRows.length - inCourseCount;
+  // "Ativos" = cautelas entregues + reservas já em curso.
+  const activeCount = (stats.data?.active ?? 0) + (stats.data?.overdue ?? 0) + inCourseCount;
 
   function selectStatus(next: string) {
     setStatus((cur) => (cur === next ? "" : next)); // clicar de novo limpa
+    setScope("all");
     setPage(1);
+  }
+
+  /** "Ativos" recorta as duas listas: reservas em curso + cautelas em aberto.
+   *  "Reservados" só existe do lado das reservas. */
+  function selectScope(next: Exclude<BookingScope, "all">) {
+    const ligando = scope !== next;
+    setScope(ligando ? next : "all");
+    setStatus(ligando && next === "in-course" ? "open" : "");
+    setPage(1);
+    if (ligando) document.getElementById("reservas")?.scrollIntoView({ behavior: "smooth" });
   }
 
   const statusOptions = useMemo(
@@ -241,15 +195,42 @@ export default function CustodyPage() {
           <div className="col-auto ms-auto">
             <button className="btn btn-primary" onClick={() => setShowNew(true)}>
               <IconPlus size={18} className="me-1" />
-              Nova cautela
+              Entregar bem
             </button>
           </div>
         </div>
       </div>
 
-      {/* Estatísticas (clicáveis → filtram) */}
+      {/* Reservas pendentes e reservadas — a cautela costuma nascer de uma reserva. */}
+      <div className="row row-cards mt-1" id="reservas">
+        <div className="col-12">
+          <BookingsCard scope={scope} />
+        </div>
+      </div>
+
+      {/* Situação geral: reservas em curso + cautelas (cards de cautela filtram a lista) */}
       <div className="row row-cards mt-1">
-        {STAT_CARDS.map((c) => (
+        <StatCard
+          label="Ativos"
+          hint="cautelas + reservas em curso"
+          value={activeCount}
+          color="var(--state-alert)"
+          icon={<IconPackage size={22} />}
+          active={scope === "in-course"}
+          loading={stats.isLoading || reserved.isLoading}
+          onClick={() => selectScope("in-course")}
+        />
+        <StatCard
+          label="Reservados"
+          hint="ainda vão começar"
+          value={reservedCount}
+          color="var(--hydro)"
+          icon={<IconCalendarEvent size={22} />}
+          active={scope === "upcoming"}
+          loading={reserved.isLoading}
+          onClick={() => selectScope("upcoming")}
+        />
+        {cards.map((c) => (
           <StatCard
             key={c.key}
             label={c.label}
@@ -285,10 +266,12 @@ export default function CustodyPage() {
                 value={status}
                 onChange={(e) => {
                   setStatus(e.target.value);
+                  setScope("all");
                   setPage(1);
                 }}
               >
                 <option value="">Todas as situações</option>
+                <option value="open">Em aberto (ativa + atrasada)</option>
                 {statusOptions.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
@@ -302,6 +285,7 @@ export default function CustodyPage() {
                   className="btn btn-link"
                   onClick={() => {
                     setStatus("");
+                    setScope("all");
                     setQInput("");
                     setQ("");
                     setPage(1);
@@ -320,7 +304,7 @@ export default function CustodyPage() {
               <tr>
                 <th>Bem</th>
                 <th>Responsável</th>
-                <th>Solicitada</th>
+                <th>Entregue em</th>
                 <th>Devolver até</th>
                 <th>Situação</th>
                 <th className="w-1" />
@@ -339,7 +323,7 @@ export default function CustodyPage() {
                   <td colSpan={6} className="text-secondary text-center py-4">
                     {hasFilter
                       ? "Nenhuma cautela para os filtros aplicados."
-                      : "Nenhuma cautela. Clique em “Nova cautela” para solicitar."}
+                      : "Nenhuma cautela. Clique em “Entregar bem” para registrar uma."}
                   </td>
                 </tr>
               )}
@@ -355,7 +339,7 @@ export default function CustodyPage() {
                         title="Ver agenda deste bem"
                       >
                         <div className="fw-medium">{c.asset_name}</div>
-                        <div className="text-secondary small">{c.asset_tag}</div>
+                        <div className="asset-tag">{c.asset_tag}</div>
                       </Link>
                     </td>
                     <td>{c.holder_name}</td>
@@ -383,22 +367,24 @@ export default function CustodyPage() {
                               </button>
                             </>
                           )}
-                          {open && (
+                          {/* Cautela em curso: a única saída é registrar a entrega do bem. */}
+                          {open ? (
                             <button
                               className="btn btn-sm btn-primary"
                               onClick={() => setReturning(c)}
                             >
-                              Devolver
+                              Registrar entrega
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-sm btn-ghost-danger"
+                              onClick={() => {
+                                if (confirm("Excluir esta cautela?")) del.mutate(c.id);
+                              }}
+                            >
+                              Excluir
                             </button>
                           )}
-                          <button
-                            className="btn btn-sm btn-ghost-danger"
-                            onClick={() => {
-                              if (confirm("Excluir esta cautela?")) del.mutate(c.id);
-                            }}
-                          >
-                            Excluir
-                          </button>
                         </div>
                       )}
                     </td>
@@ -409,40 +395,16 @@ export default function CustodyPage() {
           </table>
         </div>
 
-        <div className="card-footer d-flex align-items-center">
-          <p className="m-0 text-secondary">
-            {count > 0 ? (
-              <>
-                Mostrando <strong>{from}</strong>–<strong>{to}</strong> de <strong>{count}</strong>
-              </>
-            ) : (
-              "Sem registros"
-            )}
-            {isFetching && !isLoading && <span className="ms-2 spinner-border spinner-border-sm" />}
-          </p>
-          <div className="ms-auto d-flex align-items-center gap-2">
-            <span className="text-secondary">
-              Página {page} de {totalPages}
-            </span>
-            <button
-              className="btn btn-sm btn-outline-secondary"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              <IconChevronLeft size={16} />
-            </button>
-            <button
-              className="btn btn-sm btn-outline-secondary"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              <IconChevronRight size={16} />
-            </button>
-          </div>
-        </div>
+        <Pagination
+          page={page}
+          count={count}
+          label={{ one: "cautela", many: "cautelas" }}
+          loading={isFetching && !isLoading}
+          onChange={setPage}
+        />
       </div>
 
-      {returning && <ReturnModal custody={returning} onClose={() => setReturning(null)} />}
+      {returning && <ReturnCustodyModal custody={returning} onClose={() => setReturning(null)} />}
       {showNew && <IssueCustodyModal onClose={() => setShowNew(false)} />}
     </>
   );

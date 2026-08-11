@@ -15,6 +15,7 @@ export interface Custody {
   condition_out: string;
   status: "pending" | "active" | "rejected" | "returned" | "overdue" | "lost";
   term_hash: string;
+  booking: string | null;
   notes: string;
 }
 
@@ -70,9 +71,10 @@ export interface CustodyStats {
   open: number;
 }
 
-export function useCustodyStats() {
+export function useCustodyStats(opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ["custody-stats"],
+    enabled: opts.enabled ?? true,
     queryFn: async () => (await api.get<CustodyStats>("/custodies/stats")).data,
   });
 }
@@ -81,6 +83,8 @@ export interface IssueCustody {
   asset: string;
   holder: string;
   booking?: string | null;
+  /** Data da entrega do bem. Ausente = agora. */
+  issued_at?: string;
   due_at: string;
   condition_out: string;
   notes?: string;
@@ -95,6 +99,7 @@ export function useIssueCustody() {
       qc.invalidateQueries({ queryKey: ["custodies"] });
       qc.invalidateQueries({ queryKey: ["custody-stats"] });
       qc.invalidateQueries({ queryKey: ["assets"] });
+      qc.invalidateQueries({ queryKey: ["asset-stats"] });
       qc.invalidateQueries({ queryKey: ["bookings"] });
     },
   });
@@ -109,6 +114,7 @@ function useCustodyAction(action: "approve" | "reject") {
       qc.invalidateQueries({ queryKey: ["custodies"] });
       qc.invalidateQueries({ queryKey: ["custody-stats"] });
       qc.invalidateQueries({ queryKey: ["assets"] });
+      qc.invalidateQueries({ queryKey: ["asset-stats"] });
     },
   });
 }
@@ -144,6 +150,7 @@ export function useReturnCustody() {
       qc.invalidateQueries({ queryKey: ["custodies"] });
       qc.invalidateQueries({ queryKey: ["custody-stats"] });
       qc.invalidateQueries({ queryKey: ["assets"] });
+      qc.invalidateQueries({ queryKey: ["asset-stats"] });
     },
   });
 }

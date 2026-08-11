@@ -21,9 +21,11 @@ class InventoryService(BaseService):
         tenant_id = get_current_tenant_id()
         if tenant_id is None:
             raise BusinessRuleError("Sem tenant no contexto.", code="no_tenant")
+        mes = timezone.localdate().replace(day=1)
         inventory = Inventory.objects.create(
             tenant_id=tenant_id,
             title=title,
+            reference_month=mes,
             responsible_id=responsible_id,
             status=InventoryStatus.OPEN,
         )
@@ -98,6 +100,40 @@ class InventoryService(BaseService):
             actor_id=actor_id,
         )
         return inventory
+
+    @transaction.atomic
+    def rename_inventory(self, *, inventory_id: UUID | str, title: str, actor_id: UUID | str) -> Inventory:
+        inventory = Inventory.objects.for_current_tenant().alive().get(pk=inventory_id)
+        if inventory.title == title:
+            return inventory
+        inventory.title = title
+        inventory.save(update_fields=["title", "updated_at"])
+        audit.record(
+            action="inventory.updated",
+            entity_type="Inventory",
+            entity_id=inventory.id,
+            actor_id=actor_id,
+            diff={"title": title},
+        )
+        return inventory
+
+    @transaction.atomic
+    def delete_inventory(self, *, inventory_id: UUID | str, actor_id: UUID | str) -> None:
+        """Descarta a conferência inteira (soft delete) — os bens não são tocados."""
+        inventory = Inventory.objects.for_current_tenant().alive().get(pk=inventory_id)
+        agora = timezone.now()
+        InventoryItem.objects.filter(inventory=inventory, deleted_at__isnull=True).update(
+            deleted_at=agora
+        )
+        inventory.deleted_at = agora
+        inventory.save(update_fields=["deleted_at", "updated_at"])
+        audit.record(
+            action="inventory.deleted",
+            entity_type="Inventory",
+            entity_id=inventory.id,
+            actor_id=actor_id,
+            diff={"title": inventory.title},
+        )
 
     def report(self, *, inventory_id: UUID | str) -> dict[str, int]:
         items = InventoryItem.objects.for_current_tenant().alive().filter(inventory_id=inventory_id)

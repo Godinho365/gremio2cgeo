@@ -13,6 +13,7 @@ export interface Booking {
   end_at: string;
   status: "pending" | "approved" | "rejected" | "cancelled" | "completed";
   notes: string;
+  created_at: string;
 }
 
 interface Paginated<T> {
@@ -28,12 +29,27 @@ export const BOOKING_STATUS: Record<Booking["status"], { label: string; cls: str
   completed: { label: "Concluída", cls: "bg-blue-lt" },
 };
 
-export function useBookings(asset?: string) {
+export interface BookingFilters {
+  asset?: string;
+  status?: Booking["status"];
+  /** Só as que ainda não terminaram. */
+  upcoming?: boolean;
+}
+
+export function useBookings(filters: BookingFilters = {}) {
+  const { asset, status, upcoming } = filters;
   return useQuery({
-    queryKey: ["bookings", asset ?? "all"],
+    queryKey: [
+      "bookings",
+      { asset: asset ?? null, status: status ?? null, upcoming: !!upcoming },
+    ],
     queryFn: async () => {
-      const q = asset ? `?asset=${asset}` : "";
-      return (await api.get<Paginated<Booking>>(`/bookings${q}`)).data;
+      const params = new URLSearchParams();
+      if (asset) params.set("asset", asset);
+      if (status) params.set("status", status);
+      if (upcoming) params.set("upcoming", "1");
+      const qs = params.toString();
+      return (await api.get<Paginated<Booking>>(`/bookings${qs ? `?${qs}` : ""}`)).data;
     },
   });
 }
@@ -80,6 +96,8 @@ export interface NewBooking {
   start_at: string;
   end_at: string;
   notes?: string;
+  /** Reserva em nome de outro usuário — só Admin/Diretor. */
+  requester?: string;
 }
 
 export function useCreateBooking() {
@@ -101,3 +119,13 @@ function useBookingAction(action: "approve" | "cancel") {
 
 export const useApproveBooking = () => useBookingAction("approve");
 export const useCancelBooking = () => useBookingAction("cancel");
+
+export function useDeleteBooking() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/bookings/${id}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bookings"] }),
+  });
+}

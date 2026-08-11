@@ -1,0 +1,1036 @@
+/*
+ * Aplicação do sistema sobre o Tabler. O Tabler é construído em custom
+ * properties, então mapear os tokens nelas veste todas as telas de uma vez.
+ * Regras próprias vêm depois, sempre com seletor de classe (nunca !important,
+ * salvo onde o Tabler embute gradiente ou sombra).
+ */
+
+html,
+body {
+  overflow-x: clip;
+}
+
+:root {
+  /* Base */
+  --tblr-font-sans-serif: var(--font-body);
+  --tblr-font-monospace: var(--font-data);
+  --tblr-body-bg: var(--field);
+  --tblr-body-color: var(--ink-body);
+  --tblr-border-color: var(--graticule);
+  --tblr-border-color-translucent: var(--graticule);
+  --tblr-muted: var(--ink-muted);
+  --tblr-secondary: var(--ink-muted);
+  --tblr-link-color: var(--hydro-deep);
+  --tblr-active-bg: var(--sheet-2);
+
+  --tblr-bg-surface: var(--sheet);
+  --tblr-bg-surface-secondary: var(--sheet-2);
+  --tblr-bg-surface-tertiary: var(--field);
+  --tblr-bg-forms: var(--sheet);
+
+  --tblr-primary: var(--hydro);
+  --tblr-primary-rgb: 15, 110, 150;
+  --tblr-primary-fg: var(--on-hydro);
+  --tblr-primary-lt: var(--hydro-wash);
+  --tblr-primary-darken: var(--hydro-deep);
+
+  --tblr-border-radius: var(--radius);
+  --tblr-border-radius-sm: 3px;
+  --tblr-border-radius-md: var(--radius);
+  --tblr-border-radius-lg: var(--radius-lg);
+  --tblr-border-radius-xl: var(--radius-lg);
+  --tblr-border-radius-xxl: var(--radius-lg);
+
+  --tblr-shadow: none;
+  --tblr-shadow-card: none;
+  --tblr-shadow-card-hover: var(--lift-sheet);
+  --tblr-shadow-input: none;
+  --tblr-shadow-dropdown: var(--lift-modal);
+
+  --tblr-font-weight-headings: 600;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  line-height: var(--lead-body);
+  color: var(--ink-body);
+  background-color: var(--field);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Tipografia ──────────────────────────────────────────────────────────
+ * Display condensado nos títulos; o corpo fica com o Plex Sans. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.h1,
+.h2,
+.h3,
+.h4,
+.page-title,
+.modal-title,
+.navbar-brand {
+  font-family: var(--font-display);
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: var(--track-display);
+  line-height: var(--lead-display);
+  color: var(--ink);
+}
+
+.page-title {
+  font-size: var(--text-xl);
+}
+
+.card-title {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+
+/* Camada de dados: numeração patrimonial, cabeçalho de tabela, rótulo de
+ * seção. Bistre das curvas de nível — informação de registro, não decoração. */
+.page-pretitle,
+.table thead th,
+.datagrid-title {
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: var(--track-data);
+  text-transform: uppercase;
+  color: var(--relief);
+}
+
+.asset-tag {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  letter-spacing: var(--track-data);
+  color: var(--relief);
+}
+
+.form-label {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink-body);
+}
+
+.form-hint {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+
+/* ── Assinatura: régua graduada ───────────────────────────────────────────
+ * A grade de coordenadas de uma carta é marcada por ticks a intervalo fixo.
+ * Aqui ela separa o cabeçalho da página do conteúdo — é a peça que dá o tom
+ * e a única liberdade decorativa do sistema. */
+.page-header {
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--graticule);
+  position: relative;
+  margin-bottom: var(--space-md);
+}
+
+.page-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 5px;
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--graticule-strong) 0 1px,
+    transparent 1px 32px
+  );
+}
+
+/* ── Rail ────────────────────────────────────────────────────────────────
+ * Claro, separado por grade; o item ativo recebe o azul e um tick à esquerda. */
+.navbar-vertical,
+.navbar-vertical.navbar-dark,
+.navbar-vertical[data-bs-theme="dark"] {
+  background: var(--sheet);
+  border-right: 1px solid var(--graticule);
+  box-shadow: none;
+  scrollbar-width: thin;
+}
+
+/* O Tabler fixa `overflow-y:scroll` em `.navbar-vertical.navbar-expand-*`, o que
+ * mantém a barra ocupando ~16px do rail mesmo sem nada para rolar. Mesmo peso
+ * de seletor para devolver esse espaço ao menu. */
+.navbar-vertical.navbar-expand-sm,
+.navbar-vertical.navbar-expand-md,
+.navbar-vertical.navbar-expand-lg,
+.navbar-vertical.navbar-expand-xl {
+  overflow-y: auto;
+}
+
+.navbar-vertical .nav-link {
+  color: var(--ink-muted);
+  border-radius: var(--radius);
+  margin-inline: var(--space-xs);
+  padding-block: var(--space-xs);
+  transition:
+    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.navbar-vertical .nav-link:hover {
+  color: var(--ink);
+  background: var(--sheet-2);
+}
+
+.navbar-vertical .nav-link.active {
+  color: var(--hydro-deep);
+  background: var(--hydro-wash);
+  box-shadow: inset 2px 0 0 var(--hydro);
+}
+
+.navbar-vertical .nav-link.active .nav-link-icon {
+  color: var(--hydro-deep);
+}
+
+.navbar-vertical .nav-link-title {
+  font-size: var(--text-sm);
+}
+
+.navbar-brand {
+  font-size: var(--text-lg);
+  color: var(--ink);
+  padding-block: var(--space-sm);
+}
+
+/* O nome longo quebra em linha; nunca empurra o rail para o lado. */
+.navbar-vertical .navbar-brand,
+.navbar-vertical .navbar-brand * {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.navbar-vertical .container-fluid {
+  overflow-x: clip;
+}
+
+/* ── Recolher o rail ─────────────────────────────────────────────────────
+ * Recolhido, o menu vira só emblemas (o rótulo vai para o title) e o conteúdo
+ * ganha a margem de volta. A escolha persiste entre sessões. */
+.rail-toggle {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2xs);
+  width: 100%;
+  padding: var(--space-xs);
+  border: 1px solid transparent;
+  border-top-color: var(--graticule);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+
+.rail-toggle:hover {
+  color: var(--ink);
+  background: var(--sheet-2);
+}
+
+.rail-toggle:focus-visible {
+  outline: 2px solid var(--hydro);
+  outline-offset: -2px;
+}
+
+.rail-collapsed .navbar-vertical {
+  width: 4.5rem;
+}
+
+/* Sem o padding lateral do container, o emblema fica no eixo do rail. */
+.rail-collapsed .navbar-vertical > .container-fluid {
+  padding-inline: 0;
+}
+
+/* O Tabler empurra o conteúdo com `.navbar-vertical~.page-wrapper{margin-left:15rem}`
+ * dentro de media query; o seletor precisa ter o mesmo peso para vencer. */
+.rail-collapsed .navbar-vertical ~ .page-wrapper {
+  margin-left: 4.5rem;
+}
+
+/* Mesmo peso da regra do Tabler (`.navbar-vertical.navbar-expand-lg
+ * .navbar-collapse .navbar-nav .nav-link`), que fixa justify-content. */
+.rail-collapsed .navbar-vertical .navbar-collapse .navbar-nav .nav-link {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.rail-collapsed .navbar-vertical .nav-link-title,
+.rail-collapsed .rail-toggle-text {
+  display: none;
+}
+
+.rail-collapsed .navbar-vertical .navbar-collapse .navbar-nav .nav-link .nav-link-icon {
+  margin: 0;
+}
+
+.navbar.navbar-expand-md {
+  background: var(--sheet);
+  border-bottom: 1px solid var(--graticule);
+  box-shadow: none;
+}
+
+/* ── Folhas ──────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--sheet);
+  border: 1px solid var(--graticule);
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+
+.card-header {
+  background: transparent;
+  border-bottom: 1px solid var(--graticule);
+  min-height: auto;
+  padding-block: var(--space-sm);
+}
+
+.card-footer {
+  background: transparent;
+  border-top: 1px solid var(--graticule);
+}
+
+.card .card {
+  border-color: transparent;
+  background: var(--sheet-2);
+}
+
+/* ── Tabelas: linhas de grade, sem zebra ────────────────────────────────── */
+.table {
+  --tblr-table-bg: transparent;
+  --tblr-table-border-color: var(--graticule);
+  --tblr-table-hover-bg: var(--sheet-2);
+  --tblr-table-striped-bg: transparent;
+  color: var(--ink-body);
+}
+
+.table thead th {
+  border-bottom: 1px solid var(--graticule-strong);
+  padding-block: var(--space-sm);
+  background: transparent;
+}
+
+.table td {
+  padding-block: var(--space-sm);
+  border-color: var(--graticule);
+}
+
+/* ── Controles ──────────────────────────────────────────────────────────── */
+.btn {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border-radius: var(--radius);
+  box-shadow: none;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.btn-primary {
+  background: var(--hydro);
+  border-color: var(--hydro);
+  color: var(--on-hydro);
+}
+
+.btn-primary:hover,
+.btn-primary:active {
+  background: var(--hydro-deep);
+  border-color: var(--hydro-deep);
+}
+
+.btn-outline-secondary,
+.btn-ghost-secondary {
+  color: var(--ink-body);
+  border-color: var(--graticule-strong);
+}
+
+.btn-ghost-secondary:hover {
+  background: var(--sheet-2);
+  color: var(--ink);
+}
+
+.btn-success {
+  background: var(--state-ok);
+  border-color: var(--state-ok);
+}
+
+.btn-ghost-danger {
+  color: var(--state-alert);
+}
+
+.form-control,
+.form-select {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--ink);
+  background-color: var(--sheet);
+  border: 1px solid var(--graticule-strong);
+  border-radius: var(--radius);
+  box-shadow: none;
+  outline: 2px solid transparent; /* reservado: evita salto ao focar */
+  outline-offset: 1px;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.form-control::placeholder {
+  color: var(--ink-muted);
+}
+
+.form-control:hover:not(:disabled),
+.form-select:hover:not(:disabled) {
+  border-color: var(--ink-muted);
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--hydro);
+  box-shadow: none;
+  outline: 2px solid var(--hydro);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background-color: var(--sheet-2);
+}
+
+:focus-visible {
+  outline: 2px solid var(--hydro);
+  outline-offset: 2px;
+}
+
+.btn:focus-visible,
+.nav-link:focus-visible {
+  outline: 2px solid var(--hydro);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* ── Situações ──────────────────────────────────────────────────────────── */
+.badge {
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: var(--track-data);
+  text-transform: uppercase;
+  border-radius: 3px;
+  padding: 0.25em 0.5em;
+}
+
+.badge.bg-green-lt {
+  background: var(--state-ok-wash);
+  color: var(--state-ok);
+}
+
+.badge.bg-yellow-lt {
+  background: var(--state-wait-wash);
+  color: var(--state-wait);
+}
+
+.badge.bg-red-lt {
+  background: var(--state-alert-wash);
+  color: var(--state-alert);
+}
+
+.badge.bg-blue-lt {
+  background: var(--hydro-wash);
+  color: var(--hydro-deep);
+}
+
+.badge.bg-secondary-lt {
+  background: var(--sheet-2);
+  color: var(--ink-muted);
+}
+
+/* ── Sobreposições ──────────────────────────────────────────────────────── */
+.modal-content {
+  border: 1px solid var(--graticule-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--lift-modal);
+}
+
+.modal-header,
+.modal-footer {
+  border-color: var(--graticule);
+}
+
+.modal-backdrop {
+  background: rgba(28, 38, 32, 0.42);
+}
+
+/* ── Miscelânea ─────────────────────────────────────────────────────────── */
+.avatar {
+  border-radius: var(--radius);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+}
+
+.alert {
+  border-radius: var(--radius);
+  border: 1px solid var(--graticule-strong);
+}
+
+.progress {
+  border-radius: 2px;
+  background: var(--sheet-2);
+}
+
+/* ── Antessala: escolha de módulo ─────────────────────────────────────────
+ * Índice de folhas: cada módulo é uma linha numerada da carta, separada por
+ * grade. Nada de cartões flutuando — é um índice, e lê como tal. */
+.modules-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg);
+  background-color: var(--field);
+  /* A própria grade da carta, bem apagada, como papel de fundo. */
+  background-image:
+    repeating-linear-gradient(to right, var(--graticule) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(to bottom, var(--graticule) 0 1px, transparent 1px 48px);
+  background-position: center;
+}
+
+.modules-shell {
+  width: min(46rem, 100%);
+  background: var(--sheet);
+  border: 1px solid var(--graticule-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+}
+
+.modules-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--graticule);
+}
+
+.modules-org {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  color: var(--ink);
+}
+
+.modules-user {
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-data);
+  text-transform: uppercase;
+  color: var(--relief);
+}
+
+.modules-title {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  color: var(--ink);
+  margin: var(--space-lg) 0 var(--space-md);
+}
+
+.modules-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--graticule);
+}
+
+.module-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  width: 100%;
+  padding: var(--space-md) var(--space-xs);
+  border: 0;
+  border-bottom: 1px solid var(--graticule);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.module-row:hover:not(:disabled) {
+  background: var(--sheet-2);
+}
+
+.module-row:focus-visible {
+  outline: 2px solid var(--hydro);
+  outline-offset: -2px;
+}
+
+.module-row:disabled {
+  cursor: default;
+  color: var(--ink-muted);
+}
+
+/* O número da folha: marca de índice, não enfeite. */
+.module-index {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--relief);
+  width: 2ch;
+}
+
+.module-icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  border: 1px solid var(--graticule);
+  border-radius: var(--radius);
+  color: var(--hydro);
+  background: var(--sheet);
+}
+
+.module-row:disabled .module-icon {
+  color: var(--ink-muted);
+}
+
+.module-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.module-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: var(--lead-display);
+  color: var(--ink);
+}
+
+.module-row:disabled .module-name {
+  color: var(--ink-muted);
+}
+
+.module-summary {
+  font-size: var(--text-sm);
+  color: var(--ink-body);
+}
+
+.module-facts {
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-data);
+  text-transform: uppercase;
+  color: var(--relief);
+  margin-top: var(--space-2xs);
+}
+
+.module-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  flex-shrink: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--hydro-deep);
+}
+
+@media (max-width: 36rem) {
+  .modules-shell {
+    padding: var(--space-md);
+  }
+
+  .module-row {
+    flex-wrap: wrap;
+  }
+
+  .module-action {
+    margin-left: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Barbearia — o agendamento é uma tabela de horas, então a linguagem aqui é a
+   da carta náutica/tábua de marés: dígitos monoespaçados, réguas de 1px e
+   nenhuma sombra. Cada passo é numerado porque a ordem importa de verdade
+   (o dia limita o barbeiro, que limita os horários).
+   ───────────────────────────────────────────────────────────────────────── */
+
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.step-number {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--graticule-strong);
+  border-radius: 50%;
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  color: var(--hydro-deep);
+}
+
+.step-title {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: var(--lead-display);
+  color: var(--ink);
+}
+
+.step-hint {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.empty-inline {
+  display: flex;
+  align-items: center;
+  padding: var(--space-md);
+  border: 1px dashed var(--graticule-strong);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* Faixa de dias — rola no eixo x sem empurrar a página. */
+.day-strip {
+  display: flex;
+  gap: var(--space-xs);
+  overflow-x: auto;
+  padding-bottom: var(--space-2xs);
+  scrollbar-width: thin;
+}
+
+.day-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 3.5rem;
+  padding: var(--space-xs) 0;
+  background: var(--sheet);
+  border: 1px solid var(--graticule);
+  border-radius: var(--radius);
+  color: var(--ink-body);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.day-chip:hover {
+  border-color: var(--graticule-strong);
+  background: var(--sheet-2);
+}
+
+.day-chip.is-active {
+  background: var(--hydro-wash);
+  border-color: var(--hydro);
+  color: var(--hydro-deep);
+}
+
+.day-chip-weekday,
+.day-chip-month {
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-data);
+  color: var(--ink-muted);
+}
+
+.day-chip.is-active .day-chip-weekday,
+.day-chip.is-active .day-chip-month {
+  color: var(--hydro-deep);
+}
+
+.day-chip-number {
+  font-family: var(--font-data);
+  font-size: var(--text-lg);
+  line-height: 1.2;
+}
+
+/* Barbeiros */
+.barber-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-sm);
+}
+
+.barber-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  text-align: left;
+  background: var(--sheet);
+  border: 1px solid var(--graticule);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.barber-card:hover {
+  border-color: var(--graticule-strong);
+  background: var(--sheet-2);
+}
+
+.barber-card.is-active {
+  border-color: var(--hydro);
+  background: var(--hydro-wash);
+}
+
+.barber-avatar {
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 1px solid var(--graticule);
+}
+
+.barber-avatar.sm {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.barber-avatar-initials {
+  display: grid;
+  place-items: center;
+  background: var(--sheet-2);
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  color: var(--ink-muted);
+}
+
+.barber-card-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.barber-card-name {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.barber-card-meta {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+
+/* Assinante x avulso */
+.plan-choice {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--space-sm);
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2xs);
+  padding: var(--space-md);
+  text-align: left;
+  background: var(--sheet);
+  border: 1px solid var(--graticule);
+  border-radius: var(--radius);
+  color: var(--ink-body);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.plan-card:hover {
+  border-color: var(--graticule-strong);
+  background: var(--sheet-2);
+}
+
+.plan-card.is-active {
+  border-color: var(--hydro);
+  background: var(--hydro-wash);
+  color: var(--hydro-deep);
+}
+
+.plan-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: var(--lead-display);
+  color: var(--ink);
+}
+
+.plan-card.is-active .plan-name {
+  color: var(--hydro-deep);
+}
+
+.plan-detail {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* Horários livres — a única lista da tela em que a hora é o conteúdo. */
+.slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.25rem, 1fr));
+  gap: var(--space-xs);
+}
+
+.slot-chip {
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--sheet);
+  border: 1px solid var(--graticule);
+  border-radius: var(--radius);
+  font-family: var(--font-data);
+  font-size: var(--text-md);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.slot-chip:hover:not(:disabled) {
+  background: var(--hydro);
+  border-color: var(--hydro);
+  color: var(--on-hydro);
+}
+
+.slot-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Resumo da grade semanal na lista de barbeiros */
+.grid-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs) var(--space-sm);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--ink-body);
+}
+
+.grid-summary-item strong {
+  color: var(--hydro-deep);
+}
+
+/* Pagamento por Pix — a tela é o QR e o relógio, nada mais. */
+.pix-amount {
+  font-family: var(--font-data);
+  font-size: var(--text-2xl);
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.pix-qr {
+  width: 100%;
+  max-width: 15rem;
+  aspect-ratio: 1;
+  image-rendering: pixelated; /* QR pequeno fica legível sem borrar */
+  border: 1px solid var(--graticule);
+  border-radius: var(--radius);
+  background: #fff; /* o leitor precisa do contraste do papel, não do tema */
+  padding: var(--space-xs);
+}
+
+.pix-timer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2xs);
+  margin-top: var(--space-sm);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.pix-timer strong {
+  font-family: var(--font-data);
+  color: var(--ink);
+}
+
+.pix-done {
+  display: grid;
+  place-items: center;
+  width: 4rem;
+  height: 4rem;
+  margin: 0 auto var(--space-md);
+  border-radius: 50%;
+  background: var(--state-ok-wash);
+  color: var(--state-ok);
+}
+
+.plan-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Saldo de crédito — número é o conteúdo, então vai em monoespaçada. */
+.credit-balance {
+  font-family: var(--font-data);
+  font-size: var(--text-lg);
+  color: var(--state-ok);
+}
+
+/* Crédito no cabeçalho — some quando o saldo é zero, para não virar ruído. */
+.credit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding: 0.25rem var(--space-xs);
+  background: var(--state-ok-wash);
+  border: 1px solid var(--state-ok);
+  border-radius: var(--radius);
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  line-height: 1.2;
+  color: var(--state-ok);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.credit-chip:hover {
+  background: var(--state-ok);
+  color: #fff;
+}
+
+/* Saldo zerado informa, não anuncia: fica discreto até entrar dinheiro. */
+.credit-chip.is-empty {
+  background: transparent;
+  border-color: var(--graticule);
+  color: var(--ink-muted);
+}
+
+.credit-chip.is-empty:hover {
+  background: var(--sheet-2);
+  color: var(--ink-body);
+}

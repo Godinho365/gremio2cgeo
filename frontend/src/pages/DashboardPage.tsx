@@ -1,17 +1,14 @@
 import {
   IconAlertTriangle,
-  IconArrowRight,
   IconBox,
-  IconCalendarEvent,
   IconClipboardCheck,
   IconClock,
-  IconMap2,
   IconPackage,
-  IconPlus,
 } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
+import BookingsCard, { isInCourse } from "../components/BookingsCard";
 import { STATUS_META, useAssets } from "../features/assets/api";
 import { CUSTODY_STATUS, useCustodies, useCustodyStats } from "../features/custody/api";
 import { useBookings } from "../features/scheduling/api";
@@ -77,33 +74,12 @@ function StatCard({
   );
 }
 
-function QuickAction({
-  to,
-  icon,
-  label,
-}: {
-  to: string;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <div className="col-6 col-md-4 col-xl">
-      <Link to={to} className="card card-sm card-link h-100 text-reset text-decoration-none">
-        <div className="card-body d-flex align-items-center gap-3">
-          <span className="text-primary">{icon}</span>
-          <span className="fw-medium">{label}</span>
-          <IconArrowRight size={16} className="ms-auto text-secondary" />
-        </div>
-      </Link>
-    </div>
-  );
-}
-
 export default function DashboardPage() {
   const { user } = useAuth();
   const assets = useAssets();
   const stats = useCustodyStats();
-  const bookings = useBookings();
+  const bookings = useBookings({ status: "pending" });
+  const aprovadas = useBookings({ status: "approved", upcoming: true });
   const recent = useCustodies();
 
   const totalAssets = assets.data?.count ?? 0;
@@ -116,11 +92,15 @@ export default function DashboardPage() {
   }));
   const distTotal = assetRows.length || 1;
 
-  const pendingBookings = (bookings.data?.results ?? []).filter((b) => b.status === "pending").length;
+  const pendingBookings = bookings.data?.count ?? 0; // count do backend: não depende da paginação
   const overdue = stats.data?.overdue ?? 0;
-  const open = stats.data?.open ?? 0;
+  // Bem fora = cautela em aberto + reserva aprovada já em curso. É a mesma regra
+  // do catálogo e da tela de cautelas; contar só cautela mostrava 0 com bens fora.
+  const emCurso = (aprovadas.data?.results ?? []).filter(isInCourse).length;
+  const fora = (stats.data?.open ?? 0) + emCurso;
 
-  const recentList = (recent.data?.results ?? []).slice(0, 6);
+  // A API já devolve por data de entrega decrescente: as três últimas.
+  const recentList = (recent.data?.results ?? []).slice(0, 3);
 
   return (
     <>
@@ -153,10 +133,10 @@ export default function DashboardPage() {
           to="/patrimonio"
         />
         <StatCard
-          label="Cautelas em aberto"
-          value={open}
-          hint="ativas + atrasadas"
-          color="#2fb344"
+          label="Bens em poder de alguém"
+          value={fora}
+          hint="cautelas + reservas em curso"
+          color="var(--state-alert)"
           icon={<IconClipboardCheck size={22} />}
           to="/cautelas"
         />
@@ -174,6 +154,13 @@ export default function DashboardPage() {
           icon={<IconClock size={22} />}
           to="/agenda"
         />
+      </div>
+
+      {/* Fila de reservas — o KPI acima só conta; aqui dá para agir. */}
+      <div className="row row-cards mt-1">
+        <div className="col-12">
+          <BookingsCard perPage={3} />
+        </div>
       </div>
 
       <div className="row row-cards mt-1">
@@ -267,16 +254,6 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
-      </div>
-
-      {/* Atalhos rápidos */}
-      <div className="mt-3 mb-2 text-secondary">Atalhos</div>
-      <div className="row row-cards g-2">
-        <QuickAction to="/patrimonio" icon={<IconPlus size={20} />} label="Cadastrar bem" />
-        <QuickAction to="/cautelas" icon={<IconClipboardCheck size={20} />} label="Cautelas" />
-        <QuickAction to="/agenda" icon={<IconCalendarEvent size={20} />} label="Agenda" />
-        <QuickAction to="/planta" icon={<IconMap2 size={20} />} label="Planta da sala" />
-        <QuickAction to="/inventario" icon={<IconPackage size={20} />} label="Inventário" />
       </div>
     </>
   );

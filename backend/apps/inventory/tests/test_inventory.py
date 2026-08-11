@@ -113,3 +113,74 @@ def test_inventories_tenant_scoped(client: APIClient):
     client.post("/api/inventories", {"title": "B"}, format="json")
     client.force_authenticate(admin_a)
     assert client.get("/api/inventories").data["count"] == 0
+
+
+def test_inventory_records_reference_month(client: APIClient):
+    from django.utils import timezone
+
+    tenant, admin = _org("inmes")
+    client.force_authenticate(admin)
+    inv = client.post("/api/inventories", {"title": "Conferência"}, format="json").data
+    assert inv["reference_month"] == timezone.localdate().replace(day=1).isoformat()
+
+
+def test_rename_and_delete_inventory(client: APIClient):
+    tenant, admin = _org("inedit")
+    with use_tenant(tenant.id):
+        AssetService().create_asset(name="Bem do inventário")
+    client.force_authenticate(admin)
+    inv = client.post("/api/inventories", {"title": "Agosto"}, format="json").data
+
+    renomeado = client.patch(
+        f"/api/inventories/{inv['id']}", {"title": "Agosto/2026"}, format="json"
+    )
+    assert renomeado.status_code == 200
+    assert renomeado.data["title"] == "Agosto/2026"
+
+    assert client.delete(f"/api/inventories/{inv['id']}").status_code == 204
+    assert client.get("/api/inventories").data["count"] == 0
+    # os itens somem junto, sem tocar nos bens
+    assert client.get(f"/api/inventories/{inv['id']}/items").data == []
+
+
+def test_item_shows_who_holds_the_asset(client: APIClient):
+    """No dia da conferência, bem cautelado aparece com o nome de quem está."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    tenant, admin = _org("inholder")
+    with use_tenant(tenant.id):
+        asset = AssetService().create_asset(name="Com alguém")
+        holder = UserService().create_user(
+            username="port_in", password="supersecret123", nome_guerra="PORTADOR",
+            posto_graduacao="Cb", role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    client.post(
+        "/api/custodies",
+        {
+            "asset": str(asset.id),
+            "holder": str(holder.id),
+            "due_at": (timezone.now() + timedelta(days=2)).isoformat(),
+            "condition_out": "good",
+        },
+        format="json",
+    )
+    inv = client.post("/api/inventories", {"title": "Com portador"}, format="json").data
+    item = client.get(f"/api/inventories/{inv['id']}/items").data[0]
+    assert item["holder_name"] == "Cb PORTADOR"
+
+
+def test_delete_inventory_is_role_guarded(client: APIClient):
+    tenant, admin = _org("inrbac")
+    client.force_authenticate(admin)
+    inv = client.post("/api/inventories", {"title": "Protegido"}, format="json").data
+    with use_tenant(tenant.id):
+        comum = UserService().create_user(
+            username="comum_inv", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(comum)
+    assert client.delete(f"/api/inventories/{inv['id']}").status_code == 422
+    assert client.patch(f"/api/inventories/{inv['id']}", {"title": "x"}, format="json").status_code == 422

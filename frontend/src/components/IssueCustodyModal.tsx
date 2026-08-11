@@ -3,19 +3,19 @@ import { useState } from "react";
 import { useUsers } from "../features/accounts/api";
 import { CONDITIONS, useAssets } from "../features/assets/api";
 import { useIssueCustody } from "../features/custody/api";
+import { dateStr } from "../lib/dates";
 
-// Data de hoje em "YYYY-MM-DD" (local) — piso para o prazo de devolução.
-function todayStr(): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
+/**
+ * Entrega do bem: o gestor registra a quem entregou, quando, até quando e em
+ * que estado. A cautela já nasce ativa — não há etapa de solicitação.
+ */
 export default function IssueCustodyModal({
   asset: fixedAsset,
   assetLabel,
   defaultHolder,
   defaultDue,
+  /** Dia da entrega (ex.: o dia clicado na agenda). Padrão: hoje. */
+  defaultIssued,
   bookingId,
   onClose,
 }: {
@@ -23,27 +23,37 @@ export default function IssueCustodyModal({
   assetLabel?: string;
   defaultHolder?: string;
   defaultDue?: string;
+  defaultIssued?: string;
   bookingId?: string | null;
   onClose: () => void;
 }) {
   const users = useUsers();
   const assets = useAssets();
   const issue = useIssueCustody();
-  const today = todayStr();
+  const today = dateStr(new Date());
   const [asset, setAsset] = useState(fixedAsset ?? "");
   const [holder, setHolder] = useState(defaultHolder ?? "");
+  // A entrega é de hoje para trás: não se entrega um bem no futuro.
+  const [issued, setIssued] = useState(
+    defaultIssued && defaultIssued <= today ? defaultIssued : today,
+  );
   // Não pré-preenche com data passada (ex.: reserva antiga).
   const [due, setDue] = useState(defaultDue && defaultDue >= today ? defaultDue : "");
   const [condition, setCondition] = useState("good");
   const [error, setError] = useState<string | null>(null);
 
-  const duePast = due !== "" && due < today; // prazo no passado → inválido
+  const issuedFuture = issued > today;
+  const dueBeforeIssued = due !== "" && due < issued;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (due < today) {
-      setError("A data de devolução não pode ser no passado.");
+    if (issuedFuture) {
+      setError("A data da entrega não pode ser no futuro.");
+      return;
+    }
+    if (dueBeforeIssued) {
+      setError("A devolução não pode ser antes da entrega.");
       return;
     }
     try {
@@ -51,6 +61,7 @@ export default function IssueCustodyModal({
         asset,
         holder,
         booking: bookingId ?? null,
+        issued_at: `${issued}T12:00:00`,
         due_at: `${due}T23:59:00`,
         condition_out: condition,
       });
@@ -58,7 +69,7 @@ export default function IssueCustodyModal({
     } catch (err) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } }).response
         ?.data?.error?.message;
-      setError(msg ?? "Não foi possível solicitar a cautela.");
+      setError(msg ?? "Não foi possível registrar a entrega.");
     }
   }
 
@@ -68,9 +79,7 @@ export default function IssueCustodyModal({
         <div className="modal-dialog modal-dialog-centered">
           <div className="modal-content">
             <div className="modal-header">
-              <h5 className="modal-title">
-                Solicitar cautela{assetLabel ? ` — ${assetLabel}` : ""}
-              </h5>
+              <h5 className="modal-title">Entregar bem{assetLabel ? ` — ${assetLabel}` : ""}</h5>
               <button type="button" className="btn-close" onClick={onClose} />
             </div>
             <form onSubmit={submit}>
@@ -95,7 +104,7 @@ export default function IssueCustodyModal({
                   </div>
                 )}
                 <div className="mb-3">
-                  <label className="form-label required">Responsável</label>
+                  <label className="form-label required">Entregue a</label>
                   <select
                     className="form-select"
                     value={holder}
@@ -106,41 +115,61 @@ export default function IssueCustodyModal({
                     {users.data?.map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.display_name}
+                        {u.is_active ? "" : " (sem acesso)"}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="row">
-                  <div className="col-6 mb-1">
-                    <label className="form-label required">Devolver até</label>
+                  <div className="col-6 mb-3">
+                    <label className="form-label required">Data da entrega</label>
                     <input
                       type="date"
-                      className={`form-control${duePast ? " is-invalid" : ""}`}
-                      value={due}
-                      min={today}
-                      onChange={(e) => setDue(e.target.value)}
+                      className={`form-control${issuedFuture ? " is-invalid" : ""}`}
+                      value={issued}
+                      max={today}
+                      onChange={(e) => setIssued(e.target.value)}
                       required
                     />
-                    {duePast && (
+                    {issuedFuture && (
                       <div className="invalid-feedback d-block">
-                        A data de devolução não pode ser no passado.
+                        A entrega não pode ser no futuro.
                       </div>
                     )}
                   </div>
-                  <div className="col-6 mb-1">
-                    <label className="form-label">Estado na entrega</label>
-                    <select
-                      className="form-select"
-                      value={condition}
-                      onChange={(e) => setCondition(e.target.value)}
-                    >
-                      {CONDITIONS.map((c) => (
-                        <option key={c.value} value={c.value}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="col-6 mb-3">
+                    <label className="form-label required">Devolver até</label>
+                    <input
+                      type="date"
+                      className={`form-control${dueBeforeIssued ? " is-invalid" : ""}`}
+                      value={due}
+                      min={issued}
+                      onChange={(e) => setDue(e.target.value)}
+                      required
+                    />
+                    {dueBeforeIssued && (
+                      <div className="invalid-feedback d-block">
+                        Não pode ser antes da entrega.
+                      </div>
+                    )}
                   </div>
+                </div>
+                <div className="mb-1">
+                  <label className="form-label">Estado do item na entrega</label>
+                  <select
+                    className="form-select"
+                    value={condition}
+                    onChange={(e) => setCondition(e.target.value)}
+                  >
+                    {CONDITIONS.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="form-hint">
+                    Fica registrado para comparar com o estado na devolução.
+                  </small>
                 </div>
               </div>
               <div className="modal-footer">
@@ -150,9 +179,9 @@ export default function IssueCustodyModal({
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={issue.isPending || duePast}
+                  disabled={issue.isPending || issuedFuture || dueBeforeIssued}
                 >
-                  {issue.isPending ? "Enviando…" : "Solicitar"}
+                  {issue.isPending ? "Entregando…" : "Entregar"}
                 </button>
               </div>
             </form>

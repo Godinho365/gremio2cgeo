@@ -9,14 +9,22 @@ export interface CurrentUser {
   display_name?: string;
   nome_guerra?: string;
   posto_graduacao?: string;
+  full_name?: string;
+  cpf?: string;
+  birth_date?: string | null;
+  phone?: string;
+  date_joined?: string;
   roles: string[];
 }
 
 interface AuthState {
   user: CurrentUser | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  /** Devolve o usuário autenticado — quem chama decide a rota inicial. */
+  login: (username: string, password: string) => Promise<CurrentUser>;
   logout: () => void;
+  /** Recarrega /auth/me — usar após o usuário editar o próprio perfil. */
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -49,6 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     tokenStore.set(data.access, data.refresh);
     const me = await api.get<CurrentUser>("/auth/me");
     setUser(me.data);
+    return me.data;
   }, []);
 
   const logout = useCallback(() => {
@@ -56,9 +65,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const refresh = useCallback(async () => {
+    const me = await api.get<CurrentUser>("/auth/me");
+    setUser(me.data);
+  }, []);
+
   const value = useMemo(
-    () => ({ user, loading, login, logout }),
-    [user, loading, login, logout],
+    () => ({ user, loading, login, logout, refresh }),
+    [user, loading, login, logout, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

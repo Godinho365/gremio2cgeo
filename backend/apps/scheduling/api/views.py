@@ -1,6 +1,7 @@
 """Agenda HTTP layer. Reservas passam pelo BookingService; disponibilidade é CRUD."""
 from __future__ import annotations
 
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -53,20 +54,36 @@ class BookingViewSet(TenantScopedViewSet):
             qs = qs.filter(asset_id=asset)
         if status_f:
             qs = qs.filter(status=status_f)
-        return qs
+        # Só reservas que ainda não terminaram (filas de aprovação/cautela).
+        if self.request.query_params.get("upcoming") in ("1", "true"):
+            qs = qs.filter(end_at__gte=timezone.now())
+        return qs.order_by("start_at")  # ordem estável (paginação previsível)
 
     @extend_schema(request=BookingCreateSerializer, responses={201: BookingSerializer})
     def create(self, request: Request, *args: object, **kwargs: object) -> Response:
         payload = BookingCreateSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
+        # Admin/Diretor reserva em nome de outro usuário; os demais, só para si.
+        requester = payload.validated_data.get("requester")
+        if requester and requester.pk != request.user.pk and not _is_manager(request.user):
+            raise BusinessRuleError(
+                "Apenas Admin/Diretor reservam em nome de outro usuário.", code="forbidden"
+            )
         booking = self.service.create_booking(
             asset_id=payload.validated_data["asset"].id,
-            requester_id=str(request.user.pk),
+            requester_id=str(requester.pk if requester else request.user.pk),
             start_at=payload.validated_data["start_at"],
             end_at=payload.validated_data["end_at"],
             notes=payload.validated_data.get("notes", ""),
         )
         return Response(BookingSerializer(booking).data, status=201)
+
+    def destroy(self, request: Request, *args: object, **kwargs: object) -> Response:
+        """Exclui a reserva do histórico (soft delete). Só gestor."""
+        if not _is_manager(request.user):
+            raise BusinessRuleError("Apenas Admin/Diretor excluem reservas.", code="forbidden")
+        self.service.repository.soft_delete(self.get_object())
+        return Response(status=204)
 
     @extend_schema(responses={200: BookingSerializer})
     @action(detail=True, methods=["post"])

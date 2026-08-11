@@ -6,6 +6,8 @@ export interface Inventory {
   id: string;
   title: string;
   status: "open" | "closed";
+  /** 1º dia do mês conferido (a conferência é mensal). */
+  reference_month: string | null;
   responsible_name: string;
   created_at: string;
   closed_at: string | null;
@@ -22,6 +24,8 @@ export interface InventoryItem {
   found_location_name: string | null;
   condition_found: string;
   discrepancy: "none" | "not_found" | "wrong_location";
+  /** Com quem o bem está hoje — no dia da conferência, vale como local. */
+  holder_name: string | null;
   scanned_at: string | null;
 }
 
@@ -55,6 +59,25 @@ export function useOpenInventory() {
   return useMutation({
     mutationFn: async (title: string) =>
       (await api.post<Inventory>("/inventories", { title })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inventories"] }),
+  });
+}
+
+export function useRenameInventory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, title }: { id: string; title: string }) =>
+      (await api.patch<Inventory>(`/inventories/${id}`, { title })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inventories"] }),
+  });
+}
+
+export function useDeleteInventory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/inventories/${id}`);
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["inventories"] }),
   });
 }

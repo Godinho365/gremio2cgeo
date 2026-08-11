@@ -66,6 +66,33 @@ class AssetService(BaseService):
                 continue
         raise BusinessRuleError("Não foi possível gerar asset_tag.", code="asset_tag_generation")
 
+    @transaction.atomic
+    def delete_asset(self, *, asset: Asset, actor_id: UUID | None = None) -> None:
+        """Exclui o bem do acervo (soft delete — o histórico de cautelas continua).
+
+        Um bem que está com alguém não sai do acervo: a entrega tem de ser
+        registrada antes, senão o termo de responsabilidade fica órfão.
+        """
+        from apps.custody.models import OPEN_CUSTODY_STATUSES, Custody
+
+        em_aberto = Custody.objects.filter(
+            asset_id=asset.pk, status__in=OPEN_CUSTODY_STATUSES, deleted_at__isnull=True
+        ).exists()
+        if em_aberto:
+            raise BusinessRuleError(
+                "Este bem está cautelado. Registre a entrega antes de excluir.",
+                code="asset_in_custody",
+            )
+
+        self.repository.soft_delete(asset)
+        audit.record(
+            action="asset.deleted",
+            entity_type="Asset",
+            entity_id=asset.pk,
+            actor_id=actor_id,
+            diff={"asset_tag": asset.asset_tag, "name": asset.name},
+        )
+
     def _persist(
         self,
         tenant_id: UUID,

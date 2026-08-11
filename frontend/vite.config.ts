@@ -9,14 +9,16 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       manifest: {
-        name: "Patrimonia",
-        short_name: "Patrimonia",
-        description: "ERP Patrimonial SaaS",
+        name: "Grêmio do 2º CGEO",
+        short_name: "Grêmio 2º CGEO",
+        description: "Agenda e administração de patrimônio do Grêmio do 2º CGEO",
         theme_color: "#0f172a",
         background_color: "#0f172a",
         display: "standalone",
         start_url: "/",
-        icons: [],
+        icons: [
+          { src: "/logo_gremio.jpeg", sizes: "764x754", type: "image/jpeg", purpose: "any" },
+        ],
       },
     }),
   ],
