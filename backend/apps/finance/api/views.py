@@ -1,6 +1,8 @@
 """Financeiro HTTP layer. Regras no FinanceService; sem lógica aqui."""
 from __future__ import annotations
 
+from datetime import datetime
+
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
 from rest_framework.exceptions import MethodNotAllowed
@@ -10,7 +12,7 @@ from rest_framework.response import Response
 
 from apps.accounts.models import RoleCode
 from core.exceptions import BusinessRuleError
-from core.viewsets import TenantScopedViewSet
+from core.viewsets import TenantContextAPIView, TenantScopedViewSet
 
 from ..models import BillingProfile, Due
 from ..services import FinanceService
@@ -133,3 +135,32 @@ class DueViewSet(TenantScopedViewSet):
         due = self.get_object()
         dues = self.service.cancel_payment(due_id=due.pk, actor_id=str(request.user.pk))
         return Response(DueSerializer(dues, many=True).data)
+
+
+class FinanceDashboardView(TenantContextAPIView):
+    """Indicadores agregados do financeiro, para o painel do admin."""
+
+    permission_classes = [IsAuthenticated]
+    service = FinanceService()
+
+    def get(self, request: Request) -> Response:
+        if not _can_read(request.user):
+            raise BusinessRuleError("Sem permissão para ver o financeiro.", code="forbidden")
+        raw_from = request.query_params.get("from")
+        raw_to = request.query_params.get("to")
+        date_from = datetime.strptime(raw_from, "%Y-%m-%d").date() if raw_from else None
+        date_to = datetime.strptime(raw_to, "%Y-%m-%d").date() if raw_to else None
+        return Response(self.service.dashboard(date_from=date_from, date_to=date_to))
+
+
+class MyFinanceView(TenantContextAPIView):
+    """Situação financeira de quem está logado."""
+
+    permission_classes = [IsAuthenticated]
+    service = FinanceService()
+
+    def get(self, request: Request) -> Response:
+        profile = self.service.profiles.profile_for_user(request.user.pk)
+        if profile is None or not profile.is_active:
+            return Response(status=404)
+        return Response(self.service.summary_for(profile))

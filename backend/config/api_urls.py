@@ -18,7 +18,12 @@ from apps.assets.api.views import (
 )
 from apps.barbershop.api.views import AppointmentViewSet, BarberViewSet
 from apps.custody.api.views import CustodyViewSet
-from apps.finance.api.views import BillingProfileViewSet, DueViewSet
+from apps.finance.api.views import (
+    BillingProfileViewSet,
+    DueViewSet,
+    FinanceDashboardView,
+    MyFinanceView,
+)
 from apps.inventory.api.views import InventoryViewSet
 from apps.payments.api.views import (
     CreditView,
@@ -53,6 +58,8 @@ urlpatterns = [
     ),
     path("payments/config", PaymentConfigView.as_view(), name="payments_config"),
     path("credits", CreditView.as_view(), name="credits"),
+    path("finance/dashboard", FinanceDashboardView.as_view(), name="finance_dashboard"),
+    path("finance/me", MyFinanceView.as_view(), name="finance_me"),
     path("auth/signup", SignupView.as_view(), name="signup"),
     path("auth/me", MeView.as_view(), name="me"),
     path("auth/me/password", MePasswordView.as_view(), name="me_password"),

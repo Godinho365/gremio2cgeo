@@ -654,3 +654,46 @@ def test_cancelar_pagamento_on_unknown_due_returns_404(client: APIClient):
     client.force_authenticate(admin)
     resp = client.post(f"/api/dues/{uuid.uuid4()}/cancelar-pagamento")
     assert resp.status_code == 404, resp.data
+
+
+def test_finance_dashboard_requires_staff_read(client: APIClient):
+    tenant, admin = _org("finapi8")
+    with use_tenant(tenant.id):
+        plain = UserService().create_user(
+            username="plain_fin8", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(plain)
+    assert client.get("/api/finance/dashboard").status_code == 422
+
+    client.force_authenticate(admin)
+    resp = client.get("/api/finance/dashboard")
+    assert resp.status_code == 200, resp.data
+    assert "total_users" in resp.data
+
+
+def test_finance_me_returns_own_summary_or_404(client: APIClient):
+    tenant, admin = _org("finapi9")
+    with use_tenant(tenant.id):
+        member = UserService().create_user(
+            username="membro_api9", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+        not_billed = UserService().create_user(
+            username="membro_api9b", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    client.post(
+        "/api/billing-profiles",
+        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        format="json",
+    )
+
+    client.force_authenticate(member)
+    resp = client.get("/api/finance/me")
+    assert resp.status_code == 200, resp.data
+    assert "financial_status" in resp.data
+
+    client.force_authenticate(not_billed)
+    assert client.get("/api/finance/me").status_code == 404
