@@ -243,3 +243,52 @@ class FinanceService(BaseService):
             diff={"amount": str(amount), "method": method, "periods": periods_covered},
         )
         return settled
+
+    @transaction.atomic
+    def cancel_payment(self, *, due_id: str, actor_id: str | None = None) -> list[Due]:
+        due = self.dues.get(due_id)
+        if due.settled_by_id is None:
+            raise BusinessRuleError("Esta mensalidade não está paga.", code="not_paid")
+        payment = due.settled_by
+        reopened = list(
+            self.dues.query()
+            .filter(settled_by=payment)
+            .select_related("billing_profile")
+        )
+        today = timezone.localdate()
+        for reopened_due in reopened:
+            reopened_due.status = self._status_for(reopened_due.due_date, today)
+            reopened_due.paid_in_advance = False
+            reopened_due.settled_by = None
+            reopened_due.paid_at = None
+            reopened_due.save(
+                update_fields=[
+                    "status", "paid_in_advance", "settled_by", "paid_at", "updated_at"
+                ]
+            )
+
+        payment.status = PaymentStatus.CANCELLED
+        payment.save(update_fields=["status", "updated_at"])
+
+        for credit in self.credits.for_payment(payment).filter(
+            reason=FinanceCreditReason.OVERPAYMENT
+        ):
+            self.credits.create(
+                billing_profile=credit.billing_profile,
+                amount=-credit.amount,
+                reason=FinanceCreditReason.REVERSED,
+                payment=payment,
+                note="Estorno de pagamento cancelado",
+            )
+
+        profile = reopened[0].billing_profile if reopened else due.billing_profile
+        profile.financial_status = self._compute_financial_status(profile, today=today)
+        profile.save(update_fields=["financial_status", "updated_at"])
+
+        audit.record(
+            action="finance.payment_cancelled",
+            entity_type="Payment",
+            entity_id=payment.id,
+            actor_id=actor_id,
+        )
+        return reopened

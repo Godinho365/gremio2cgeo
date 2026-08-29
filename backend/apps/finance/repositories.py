@@ -42,6 +42,9 @@ class FinanceCreditRepository(BaseRepository[FinanceCredit]):
     def for_profile(self, billing_profile: BillingProfile) -> models.QuerySet[FinanceCredit]:
         return self.query().filter(billing_profile=billing_profile)
 
+    def for_payment(self, payment) -> models.QuerySet[FinanceCredit]:
+        return self.query().filter(payment=payment)
+
     def balance(self, billing_profile: BillingProfile) -> Decimal:
         total = self.for_profile(billing_profile).aggregate(s=models.Sum("amount"))["s"]
         return total or Decimal("0.00")

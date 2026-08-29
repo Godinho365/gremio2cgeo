@@ -207,3 +207,54 @@ def test_register_payment_rejects_zero_or_negative(tenant_a):
             FinanceService().register_payment(
                 user=user, amount=Decimal("0"), method="dinheiro", paid_at=timezone.now()
             )
+
+
+def test_cancel_payment_reopens_every_due_it_settled(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro8", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=user, due_day=10, started_period=_period(0))
+        paid_at = _dt(0)
+        settled = FinanceService().register_payment(
+            user=user, amount=Decimal("300.00"), method="dinheiro", paid_at=paid_at,
+        )
+        one_of_them = settled[1].id
+        reopened = FinanceService().cancel_payment(due_id=one_of_them)
+        reopened_periods = sorted(d.period for d in reopened)
+    assert reopened_periods == [_period(0), _period(1), _period(2)]
+    assert all(d.status != DueStatus.PAID for d in reopened)
+    assert all(d.settled_by_id is None for d in reopened)
+
+
+def test_cancel_payment_reverses_the_overpayment_credit(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro9", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        profile = FinanceService().activate_billing(
+            user=user, due_day=10, started_period=_period(0)
+        )
+        paid_at = _dt(0)
+        settled = FinanceService().register_payment(
+            user=user, amount=Decimal("150.00"), method="dinheiro", paid_at=paid_at,
+        )
+        FinanceService().cancel_payment(due_id=settled[0].id)
+        balance = FinanceCredit.objects.filter(billing_profile=profile).aggregate(
+            s=Sum("amount")
+        )["s"]
+    assert balance == Decimal("0.00")
+
+
+def test_cancel_payment_on_unpaid_due_is_rejected(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro10", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=user, due_day=10, started_period=_period(0))
+        unpaid = Due.objects.filter(billing_profile__user=user).first()
+        with pytest.raises(BusinessRuleError):
+            FinanceService().cancel_payment(due_id=unpaid.id)
