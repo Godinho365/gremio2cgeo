@@ -16,13 +16,11 @@ from core.exceptions import BusinessRuleError
 from core.models import Tenant
 from core.services import BaseService
 
-from .models import RoleCode, User
+from .models import BARBERSHOP_ONLY_RANKS, RoleCode, User
 from .repositories import RoleRepository, UserRepository
 
 
 class UserService(BaseService):
-    _BARBERSHOP_ONLY_RANKS = frozenset({"Sd", "Cb"})
-
     def __init__(
         self,
         users: UserRepository | None = None,
@@ -43,7 +41,7 @@ class UserService(BaseService):
 
     def _forced_roles_for_rank(self, posto_graduacao: str) -> list[str] | None:
         """Praças (Sd/Cb) só têm o perfil Cliente da Barbearia — regra de hierarquia."""
-        if posto_graduacao in self._BARBERSHOP_ONLY_RANKS:
+        if posto_graduacao in BARBERSHOP_ONLY_RANKS:
             return [RoleCode.BARBERSHOP_CLIENT]
         return None
 

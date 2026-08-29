@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "apps.inventory",
     "apps.barbershop",
     "apps.payments",
+    "apps.finance",
 ]
 
 MIDDLEWARE = [
@@ -126,6 +127,8 @@ SPECTACULAR_SETTINGS = {
         "InventoryStatusEnum": "apps.inventory.models.InventoryStatus",
         "AppointmentStatusEnum": "apps.barbershop.models.AppointmentStatus",
         "PaymentStatusEnum": "apps.payments.models.PaymentStatus",
+        "DueStatusEnum": "apps.finance.models.DueStatus",
+        "FinancialStatusEnum": "apps.finance.models.FinancialStatus",
     },
 }
 
@@ -169,3 +172,5 @@ PIX_EXPIRY_MINUTES = env.int("PIX_EXPIRY_MINUTES", default=15)
 WALK_IN_PRICE = env("WALK_IN_PRICE", default="15.00")
 # Só para apontar a um ambiente de ensaio; vazio = API real do Mercado Pago.
 MERCADOPAGO_API_BASE = env("MERCADOPAGO_API_BASE", default="")
+# Valor único da mensalidade do grêmio (módulo Financeiro).
+MEMBERSHIP_FEE = env("MEMBERSHIP_FEE", default="100.00")

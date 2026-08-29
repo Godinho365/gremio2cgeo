@@ -21,6 +21,11 @@ class RoleCode(models.TextChoices):
     BARBERSHOP_CLIENT = "barbershop_client", "Cliente da Barbearia"
 
 
+# Praças (Sd/Cb) têm regras próprias em mais de um módulo (perfil de acesso,
+# relação financeira) — uma única fonte de verdade evita duplicar o literal.
+BARBERSHOP_ONLY_RANKS = frozenset({"Sd", "Cb"})
+
+
 class Role(TimeStampedModel):
     code = models.CharField(max_length=20, choices=RoleCode.choices, unique=True)
     name = models.CharField(max_length=100)

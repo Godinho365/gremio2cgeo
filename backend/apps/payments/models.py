@@ -26,6 +26,8 @@ OPEN_PAYMENT_STATUSES = (PaymentStatus.PENDING,)
 
 class PaymentMethod(models.TextChoices):
     PIX = "pix", "Pix"
+    DINHEIRO = "dinheiro", "Dinheiro"
+    TRANSFERENCIA = "transferencia", "Transferência"
 
 
 class Payment(TenantScopedModel):
