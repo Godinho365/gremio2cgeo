@@ -379,3 +379,68 @@ def test_dashboard_counts_active_profiles_by_financial_status(tenant_a):
         data = FinanceService().dashboard()
     assert data["total_users"] == 2
     assert data["overdue_count"] + data["delinquent_count"] >= 1
+
+
+def test_activate_billing_via_api_requires_admin(client: APIClient):
+    tenant, admin = _org("finapi1")
+    with use_tenant(tenant.id):
+        member = UserService().create_user(
+            username="membro_api1", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+        plain = UserService().create_user(
+            username="plain_fin1", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(plain)
+    resp = client.post(
+        "/api/billing-profiles",
+        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        format="json",
+    )
+    assert resp.status_code == 422, resp.data
+
+    client.force_authenticate(admin)
+    resp = client.post(
+        "/api/billing-profiles",
+        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    assert resp.data["due_day"] == 10
+
+
+def test_list_billing_profiles_requires_staff_read(client: APIClient):
+    tenant, admin = _org("finapi2")
+    with use_tenant(tenant.id):
+        member = UserService().create_user(
+            username="membro_api2", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+        plain = UserService().create_user(
+            username="plain_fin2", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(plain)
+    assert client.get("/api/billing-profiles").status_code == 422
+
+    client.force_authenticate(admin)
+    assert client.get("/api/billing-profiles").status_code == 200
+
+
+def test_deactivate_billing_via_api(client: APIClient):
+    tenant, admin = _org("finapi3")
+    with use_tenant(tenant.id):
+        member = UserService().create_user(
+            username="membro_api3", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    created = client.post(
+        "/api/billing-profiles",
+        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        format="json",
+    )
+    resp = client.post(f"/api/billing-profiles/{created.data['id']}/desativar")
+    assert resp.status_code == 200, resp.data
+    assert resp.data["is_active"] is False
