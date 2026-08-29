@@ -28,8 +28,10 @@ function RegisterPaymentModal({
 }: {
   userId: string;
   /** Valor de uma mensalidade, pra pré-visualizar quantos meses o pagamento cobre.
-   *  Vem da própria Due mais recente do usuário — nunca hardcoded (MEMBERSHIP_FEE
-   *  pode mudar; a Due já gerada carrega o valor real daquele mês). */
+   *  Vem da Due mais recente por período (nunca hardcoded — MEMBERSHIP_FEE pode
+   *  mudar; a Due já gerada carrega o valor real daquele mês). `dues` vem ordenado
+   *  ASCENDENTE por period (ver DueViewSet.get_queryset / Due.Meta.ordering), então
+   *  a mais recente é o ÚLTIMO elemento, não o primeiro. */
   feeHint: number;
   onClose: () => void;
 }) {
@@ -226,7 +228,7 @@ export default function FinanceStatementPage() {
       {registering && (
         <RegisterPaymentModal
           userId={profile.user}
-          feeHint={Number((dues ?? [])[0]?.amount ?? 0)}
+          feeHint={Number((dues ?? []).at(-1)?.amount ?? 0)}
           onClose={() => setRegistering(false)}
         />
       )}
