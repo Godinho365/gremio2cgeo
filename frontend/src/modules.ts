@@ -42,7 +42,7 @@ export const MODULES: SystemModule[] = [
     name: "Sistema Financeiro",
     summary: "Mensalidades, caixa e prestação de contas do grêmio.",
     to: "/financeiro",
-    available: false,
+    available: true,
     roles: ["admin", "director", "inventory", "auditor"],
   },
 ];
