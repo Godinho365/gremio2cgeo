@@ -27,3 +27,22 @@ class HasAnyRole(BasePermission):
         if not required:
             return True
         return user.roles.filter(code__in=required).exists()
+
+
+class ExcludesRoles(BasePermission):
+    """Espelho de ``HasAnyRole``: nega acesso a quem tem algum papel listado
+    em ``excluded_roles`` (atributo da view). Sem esse atributo, libera geral.
+    """
+
+    message = "Este perfil não tem acesso a este recurso."
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+        excluded: tuple[str, ...] = tuple(getattr(view, "excluded_roles", ()))
+        if not excluded:
+            return True
+        return not user.roles.filter(code__in=excluded).exists()

@@ -10,7 +10,7 @@ from rest_framework.response import Response
 
 from apps.accounts.models import RoleCode
 from core.exceptions import BusinessRuleError
-from core.permissions import HasAnyRole
+from core.permissions import ExcludesRoles, HasAnyRole
 from core.viewsets import TenantCrudViewSet, TenantScopedViewSet
 
 from ..models import Booking
@@ -27,11 +27,12 @@ def _is_manager(user) -> bool:
 class AvailabilityViewSet(TenantCrudViewSet):
     serializer_class = AvailabilitySerializer
     required_roles = _MANAGE_ROLES
+    excluded_roles = (RoleCode.BARBERSHOP_CLIENT,)
 
     def get_permissions(self):  # type: ignore[override]
-        # read = qualquer autenticado (para ver o calendário); escrita = admin/diretor.
+        # read = qualquer autenticado exceto Cliente da Barbearia; escrita = admin/diretor.
         if self.request.method in ("GET", "HEAD", "OPTIONS"):
-            return [IsAuthenticated()]
+            return [IsAuthenticated(), ExcludesRoles()]
         return [IsAuthenticated(), HasAnyRole()]
 
     def get_queryset(self):  # type: ignore[override]
@@ -44,7 +45,8 @@ class BookingViewSet(TenantScopedViewSet):
     serializer_class = BookingSerializer
     queryset = Booking.objects.none()
     service = BookingService()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ExcludesRoles]
+    excluded_roles = (RoleCode.BARBERSHOP_CLIENT,)
 
     def get_queryset(self):  # type: ignore[override]
         qs = self.service.repository.all().select_related("asset", "requester")

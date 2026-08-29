@@ -276,3 +276,21 @@ def test_bookings_are_tenant_scoped(client: APIClient):
     client.force_authenticate(admin_a)
     resp = client.get("/api/bookings")
     assert resp.data["count"] == 0
+
+
+def test_barbershop_client_cannot_book_or_read_availability(client: APIClient):
+    tenant, admin = _org("bk8")
+    asset = _asset(tenant)
+    with use_tenant(tenant.id):
+        cliente = UserService().create_user(
+            username="cliente_bk8", password="supersecret123",
+            role_codes=[RoleCode.BARBERSHOP_CLIENT], tenant_id=tenant.id,
+        )
+    client.force_authenticate(cliente)
+    resp = client.post(
+        "/api/bookings",
+        {"asset": str(asset.id), "start_at": _dt(1, 10), "end_at": _dt(1, 12)},
+        format="json",
+    )
+    assert resp.status_code == 403
+    assert client.get("/api/availabilities").status_code == 403

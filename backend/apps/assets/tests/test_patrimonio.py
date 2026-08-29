@@ -364,3 +364,15 @@ def test_qrcode_endpoint_returns_png(client: APIClient):
     assert resp.status_code == 200
     assert resp["Content-Type"] == "image/png"
     assert resp.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_barbershop_client_cannot_list_assets(client: APIClient):
+    tenant, admin = _org("orgbc1")
+    with use_tenant(tenant.id):
+        cliente = UserService().create_user(
+            username="cliente_bc1", password="supersecret123",
+            role_codes=[RoleCode.BARBERSHOP_CLIENT], tenant_id=tenant.id,
+        )
+    client.force_authenticate(cliente)
+    resp = client.get("/api/assets")
+    assert resp.status_code == 403

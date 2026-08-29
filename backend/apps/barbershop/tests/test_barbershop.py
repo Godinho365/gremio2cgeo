@@ -1247,3 +1247,22 @@ def test_a_removed_time_off_disappears_from_the_barber(client: APIClient):
     assert depois["time_off"] == []
     # E o dia volta a ter horário.
     assert client.get(f"/api/barbers/{barber.id}/horarios-livres?date={day:%Y-%m-%d}").data
+
+
+def test_barbershop_client_can_still_book_a_haircut(client: APIClient):
+    tenant, admin = _org("bb9")
+    day = _next_weekday(2)
+    barber = _barber_with_grid(tenant, admin, weekday=2)
+    with use_tenant(tenant.id):
+        cliente = UserService().create_user(
+            username="cliente_bb9", password="supersecret123",
+            role_codes=[RoleCode.BARBERSHOP_CLIENT], tenant_id=tenant.id,
+            email="cliente_bb9@example.com",
+        )
+    client.force_authenticate(cliente)
+    resp = client.post(
+        "/api/appointments",
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": False},
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data

@@ -18,7 +18,7 @@ from rest_framework.response import Response
 from apps.custody.models import OPEN_CUSTODY_STATUSES, Custody
 from apps.scheduling.models import Booking, BookingStatus
 from core.exceptions import BusinessRuleError
-from core.permissions import HasAnyRole
+from core.permissions import ExcludesRoles, HasAnyRole
 from core.viewsets import TenantCrudViewSet, TenantScopedViewSet
 
 from ...accounts.models import RoleCode
@@ -98,12 +98,13 @@ class AssetViewSet(TenantScopedViewSet):
     queryset = Asset.objects.none()  # schema introspection; runtime uses get_queryset
     service = AssetService()
     permission_classes = [IsAuthenticated]
+    excluded_roles = (RoleCode.BARBERSHOP_CLIENT,)
 
     def get_permissions(self):  # type: ignore[override]
-        # read = any authenticated user; write = admin/director.
+        # read = any authenticated user except Cliente da Barbearia; write = admin/director.
         if self.request.method not in ("GET", "HEAD", "OPTIONS"):
             return [IsAuthenticated(), HasAnyRole()]
-        return [IsAuthenticated()]
+        return [IsAuthenticated(), ExcludesRoles()]
 
     required_roles = _MANAGE_ROLES
 
