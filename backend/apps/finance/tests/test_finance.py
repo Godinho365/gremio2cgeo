@@ -444,3 +444,42 @@ def test_deactivate_billing_via_api(client: APIClient):
     resp = client.post(f"/api/billing-profiles/{created.data['id']}/desativar")
     assert resp.status_code == 200, resp.data
     assert resp.data["is_active"] is False
+
+
+def test_update_due_day_via_api_requires_admin(client: APIClient):
+    """`_can_manage` (não `_can_read`) tem que barrar o PATCH — por isso o
+    usuário rejeitado aqui é `DIRECTOR` (tem leitura financeira via
+    `_READ_ROLES`, mas não é `ADMIN`), não um usuário sem papel nenhum: um
+    `RoleCode.USER` puro já cairia em `get_object()` → `_can_read` antes de
+    chegar no `_can_manage`, mascarando uma eventual regressão nesse guard
+    específico."""
+    tenant, admin = _org("finapi4")
+    with use_tenant(tenant.id):
+        member = UserService().create_user(
+            username="membro_api4", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+        director = UserService().create_user(
+            username="director_fin4", password="supersecret123",
+            role_codes=[RoleCode.DIRECTOR], tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    created = client.post(
+        "/api/billing-profiles",
+        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        format="json",
+    )
+    profile_id = created.data["id"]
+
+    client.force_authenticate(director)
+    resp = client.patch(
+        f"/api/billing-profiles/{profile_id}", {"due_day": 15}, format="json"
+    )
+    assert resp.status_code == 422, resp.data
+
+    client.force_authenticate(admin)
+    resp = client.patch(
+        f"/api/billing-profiles/{profile_id}", {"due_day": 15}, format="json"
+    )
+    assert resp.status_code == 200, resp.data
+    assert resp.data["due_day"] == 15
