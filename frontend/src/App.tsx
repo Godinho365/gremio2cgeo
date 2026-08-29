@@ -24,6 +24,7 @@ import CatalogPage from "./pages/CatalogPage";
 import CustodyPage from "./pages/CustodyPage";
 import DashboardPage from "./pages/DashboardPage";
 import FinancePage from "./pages/FinancePage";
+import FinanceStatementPage from "./pages/FinanceStatementPage";
 import InventoryDetailPage from "./pages/InventoryDetailPage";
 import InventoryPage from "./pages/InventoryPage";
 import LoginPage from "./pages/LoginPage";
@@ -52,6 +53,7 @@ export default function App() {
           <Route index element={<HomePage />} />
           <Route element={<RequireRole roles={STAFF_ROLES} />}>
             <Route path="financeiro" element={<FinancePage />} />
+            <Route path="financeiro/:id" element={<FinanceStatementPage />} />
           </Route>
           <Route path="perfil" element={<ProfilePage />} />
           <Route element={<RequireRole roles={PATRIMONIO_ROLES} />}>
