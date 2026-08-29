@@ -258,3 +258,76 @@ def test_cancel_payment_on_unpaid_due_is_rejected(tenant_a):
         unpaid = Due.objects.filter(billing_profile__user=user).first()
         with pytest.raises(BusinessRuleError):
             FinanceService().cancel_payment(due_id=unpaid.id)
+
+
+def test_roll_all_recomputes_status_by_date(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro11", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=user, due_day=10, started_period=_period(-2))
+        FinanceService().roll_all()
+        first_due = Due.objects.filter(billing_profile__user=user).order_by("period").first()
+    # Início 2 meses atrás: o primeiro período está bem além dos 15 dias de tolerância.
+    assert first_due.status == DueStatus.DELINQUENT
+
+
+def test_roll_all_deactivates_billing_for_soldado_or_cabo(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro12", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        profile = FinanceService().activate_billing(
+            user=user, due_day=10, started_period=_period(0)
+        )
+        user.posto_graduacao = "Sd"
+        user.save(update_fields=["posto_graduacao"])
+        FinanceService().roll_all()
+        profile.refresh_from_db()
+    assert profile.is_active is False
+
+
+def test_roll_all_consumes_accumulated_credit(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro13", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        profile = FinanceService().activate_billing(
+            user=user, due_day=10, started_period=_period(0)
+        )
+        paid_at = _dt(0)
+        # Dois pagamentos de resto que juntos fecham uma mensalidade inteira.
+        FinanceService().register_payment(
+            user=user, amount=Decimal("60.00"), method="dinheiro", paid_at=paid_at
+        )
+        FinanceService().register_payment(
+            user=user, amount=Decimal("40.00"), method="dinheiro", paid_at=paid_at
+        )
+        FinanceService().roll_all()
+        paid_count = Due.objects.filter(
+            billing_profile=profile, status=DueStatus.PAID
+        ).count()
+    assert paid_count == 1
+
+
+def test_roll_dues_task_runs_for_all_tenants(tenant_a, tenant_b):
+    from apps.finance.tasks import roll_dues
+
+    with use_tenant(tenant_a.id):
+        user_a = UserService().create_user(
+            username="membroA", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=user_a, due_day=10, started_period=_period(0))
+    with use_tenant(tenant_b.id):
+        user_b = UserService().create_user(
+            username="membroB", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_b.id,
+        )
+        FinanceService().activate_billing(user=user_b, due_day=10, started_period=_period(0))
+
+    processed = roll_dues()
+    assert processed == 2

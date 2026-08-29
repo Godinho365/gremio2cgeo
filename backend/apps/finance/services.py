@@ -292,3 +292,83 @@ class FinanceService(BaseService):
             actor_id=actor_id,
         )
         return reopened
+
+    @transaction.atomic
+    def deactivate_billing(
+        self, *, profile: BillingProfile, actor_id: str | None = None
+    ) -> BillingProfile:
+        profile.is_active = False
+        profile.save(update_fields=["is_active", "updated_at"])
+        audit.record(
+            action="finance.billing_deactivated",
+            entity_type="BillingProfile",
+            entity_id=profile.id,
+            actor_id=actor_id,
+        )
+        return profile
+
+    @transaction.atomic
+    def update_due_day(
+        self, *, profile: BillingProfile, due_day: int, actor_id: str | None = None
+    ) -> BillingProfile:
+        if not (1 <= due_day <= 31):
+            raise BusinessRuleError(
+                "Dia de vencimento deve ser entre 1 e 31.", code="invalid_due_day"
+            )
+        profile.due_day = due_day
+        profile.save(update_fields=["due_day", "updated_at"])
+        today = timezone.localdate()
+        for due in self.dues.open_for_profile(profile):
+            due.due_date = _due_date_for(due.period, due_day)
+            due.status = self._status_for(due.due_date, today)
+            due.save(update_fields=["due_date", "status", "updated_at"])
+        profile.financial_status = self._compute_financial_status(profile, today=today)
+        profile.save(update_fields=["financial_status", "updated_at"])
+        audit.record(
+            action="finance.due_day_updated",
+            entity_type="BillingProfile",
+            entity_id=profile.id,
+            actor_id=actor_id,
+            diff={"due_day": due_day},
+        )
+        return profile
+
+    def _credit_balance(self, profile: BillingProfile) -> Decimal:
+        return self.credits.balance(profile)
+
+    def _consume_credit(self, profile: BillingProfile, today: date) -> None:
+        balance = self._credit_balance(profile)
+        for due in self.dues.open_for_profile(profile):
+            if balance < due.amount:
+                break
+            due.status = DueStatus.PAID
+            due.paid_in_advance = due.period > _first_of_month(today)
+            due.paid_at = timezone.now()
+            due.save(update_fields=["status", "paid_in_advance", "paid_at", "updated_at"])
+            self.credits.create(
+                billing_profile=profile,
+                amount=-due.amount,
+                reason=FinanceCreditReason.CONSUMED,
+                due=due,
+            )
+            balance -= due.amount
+
+    def roll_all(self) -> int:
+        """Reconciliação diária: janela, status por data, Sd/Cb, crédito acumulado."""
+        today = timezone.localdate()
+        processed = 0
+        for profile in self.profiles.active_profiles():
+            if profile.user.posto_graduacao in BARBERSHOP_ONLY_RANKS:
+                self.deactivate_billing(profile=profile)
+                continue
+            self._ensure_window(profile, today=today)
+            for due in self.dues.open_for_profile(profile):
+                new_status = self._status_for(due.due_date, today)
+                if new_status != due.status:
+                    due.status = new_status
+                    due.save(update_fields=["status", "updated_at"])
+            self._consume_credit(profile, today)
+            profile.financial_status = self._compute_financial_status(profile, today=today)
+            profile.save(update_fields=["financial_status", "updated_at"])
+            processed += 1
+        return processed

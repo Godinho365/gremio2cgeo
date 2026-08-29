@@ -153,6 +153,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "payments.sync_pending_payments",
         "schedule": PIX_SYNC_SECONDS,
     },
+    # RN-F1: janela de mensalidades, status por data, crédito, Sd/Cb — uma
+    # vez por dia é suficiente (nenhum desses efeitos precisa ser imediato).
+    "roll-finance-dues": {
+        "task": "finance.roll_dues",
+        "schedule": crontab(hour=1, minute=0),
+    },
 }
 
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:5173"])
