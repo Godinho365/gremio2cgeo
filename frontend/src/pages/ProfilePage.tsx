@@ -306,9 +306,7 @@ function FinanceCard() {
           <div className="datagrid-item">
             <div className="datagrid-title">Próximo vencimento</div>
             <div className="datagrid-content">
-              {data.next_due_date
-                ? new Date(data.next_due_date).toLocaleDateString("pt-BR")
-                : "—"}
+              {data.next_due_date ? formatDateBr(data.next_due_date) : "—"}
             </div>
           </div>
           <div className="datagrid-item">
@@ -321,7 +319,7 @@ function FinanceCard() {
           </div>
           <div className="datagrid-item">
             <div className="datagrid-title">Valor pendente</div>
-            <div className="datagrid-content">R$ {data.pending_amount}</div>
+            <div className="datagrid-content">R$ {brl(data.pending_amount)}</div>
           </div>
         </div>
       </div>
