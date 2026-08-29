@@ -12,6 +12,7 @@ import {
   useRegisterPayment,
   type RegisterPaymentPayload,
 } from "../features/finance/api";
+import { formatDateBr } from "../lib/masks";
 
 function periodLabel(iso: string): string {
   const [year, month] = iso.split("-");
@@ -197,7 +198,7 @@ export default function FinanceStatementPage() {
               {(dues ?? []).map((due) => (
                 <tr key={due.id}>
                   <td className="text-capitalize">{periodLabel(due.period)}</td>
-                  <td>{new Date(due.due_date).toLocaleDateString("pt-BR")}</td>
+                  <td>{formatDateBr(due.due_date)}</td>
                   <td>R$ {brl(due.amount)}</td>
                   <td>
                     {due.status_label}
