@@ -12,6 +12,8 @@ import {
   type BillingProfile,
 } from "../features/finance/api";
 import { useUsers } from "../features/accounts/api";
+import { useAuth } from "../auth/AuthContext";
+import { isAdmin } from "../auth/roles";
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
@@ -129,6 +131,8 @@ export default function FinancePage() {
   const { data: dashboard } = useFinanceDashboard();
   const { data: profiles, isLoading } = useBillingProfiles();
   const [activating, setActivating] = useState(false);
+  const { user } = useAuth();
+  const canManage = isAdmin(user);
 
   return (
     <>
@@ -141,12 +145,14 @@ export default function FinancePage() {
               Sistema Financeiro
             </h2>
           </div>
-          <div className="col-auto">
-            <button className="btn btn-primary" onClick={() => setActivating(true)}>
-              <IconPlus size={18} className="me-1" />
-              Ativar cobrança
-            </button>
-          </div>
+          {canManage && (
+            <div className="col-auto">
+              <button className="btn btn-primary" onClick={() => setActivating(true)}>
+                <IconPlus size={18} className="me-1" />
+                Ativar cobrança
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -158,7 +164,7 @@ export default function FinancePage() {
           <StatCard label="Vencidas" value={dashboard.dues_overdue} />
           <StatCard label="A vencer (30 dias)" value={dashboard.dues_upcoming_30_days} />
           <StatCard label="Valores em aberto" value={`R$ ${brl(dashboard.pending_amount)}`} />
-          <StatCard label="Recebido antecipado" value={`R$ ${brl(dashboard.advance_payments_received)}`} />
+          <StatCard label="Crédito em aberto" value={`R$ ${brl(dashboard.advance_payments_received)}`} />
           <StatCard label="Previsão a receber" value={`R$ ${brl(dashboard.upcoming_receivable)}`} />
         </div>
       )}

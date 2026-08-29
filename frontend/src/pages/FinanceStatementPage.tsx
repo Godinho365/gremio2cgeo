@@ -5,6 +5,7 @@ import { Link, useParams } from "react-router-dom";
 import { brl } from "../features/barbershop/api";
 import {
   FINANCIAL_STATUS_BADGE,
+  useActivateBilling,
   useBillingProfiles,
   useCancelPayment,
   useDeactivateBilling,
@@ -13,6 +14,8 @@ import {
   type RegisterPaymentPayload,
 } from "../features/finance/api";
 import { formatDateBr } from "../lib/masks";
+import { useAuth } from "../auth/AuthContext";
+import { isAdmin } from "../auth/roles";
 
 function periodLabel(iso: string): string {
   const [year, month] = iso.split("-");
@@ -140,6 +143,9 @@ export default function FinanceStatementPage() {
   const { data: dues, isLoading } = useDues({ billing_profile: id });
   const cancel = useCancelPayment();
   const deactivate = useDeactivateBilling();
+  const { user } = useAuth();
+  const canManage = isAdmin(user);
+  const activate = useActivateBilling();
   const [registering, setRegistering] = useState(false);
 
   if (!profile) return null;
@@ -161,7 +167,7 @@ export default function FinanceStatementPage() {
             </div>
           </div>
           <div className="col-auto d-flex gap-2">
-            {profile.is_active && (
+            {canManage && profile.is_active && (
               <button
                 className="btn btn-outline-danger"
                 onClick={() => {
@@ -171,10 +177,27 @@ export default function FinanceStatementPage() {
                 Desativar cobrança
               </button>
             )}
-            <button className="btn btn-primary" onClick={() => setRegistering(true)}>
-              <IconCash size={18} className="me-1" />
-              Registrar pagamento
-            </button>
+            {canManage && !profile.is_active && (
+              <button
+                className="btn btn-outline-success"
+                onClick={() => {
+                  if (confirm(`Reativar a cobrança de ${profile.user_name}?`))
+                    activate.mutate({
+                      user: profile.user,
+                      due_day: profile.due_day,
+                      started_period: profile.started_period,
+                    });
+                }}
+              >
+                Reativar cobrança
+              </button>
+            )}
+            {canManage && (
+              <button className="btn btn-primary" onClick={() => setRegistering(true)}>
+                <IconCash size={18} className="me-1" />
+                Registrar pagamento
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -209,7 +232,7 @@ export default function FinanceStatementPage() {
                     )}
                   </td>
                   <td>
-                    {due.status === "paid" && (
+                    {canManage && due.status === "paid" && (
                       <button
                         className="btn btn-sm btn-ghost-danger"
                         onClick={() => {
