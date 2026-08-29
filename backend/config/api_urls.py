@@ -18,7 +18,7 @@ from apps.assets.api.views import (
 )
 from apps.barbershop.api.views import AppointmentViewSet, BarberViewSet
 from apps.custody.api.views import CustodyViewSet
-from apps.finance.api.views import BillingProfileViewSet
+from apps.finance.api.views import BillingProfileViewSet, DueViewSet
 from apps.inventory.api.views import InventoryViewSet
 from apps.payments.api.views import (
     CreditView,
@@ -43,6 +43,7 @@ router.register("inventories", InventoryViewSet, basename="inventory")
 router.register("barbers", BarberViewSet, basename="barber")
 router.register("appointments", AppointmentViewSet, basename="appointment")
 router.register("billing-profiles", BillingProfileViewSet, basename="billingprofile")
+router.register("dues", DueViewSet, basename="due")
 
 urlpatterns = [
     path(

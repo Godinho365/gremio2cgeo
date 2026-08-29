@@ -483,3 +483,145 @@ def test_update_due_day_via_api_requires_admin(client: APIClient):
     )
     assert resp.status_code == 200, resp.data
     assert resp.data["due_day"] == 15
+
+
+def test_registrar_pagamento_via_api(client: APIClient):
+    tenant, admin = _org("finapi4")
+    with use_tenant(tenant.id):
+        member = UserService().create_user(
+            username="membro_api4", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    client.post(
+        "/api/billing-profiles",
+        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        format="json",
+    )
+    resp = client.post(
+        "/api/dues/registrar-pagamento",
+        {
+            "user": str(member.id),
+            "amount": "200.00",
+            "method": "dinheiro",
+            "paid_at": _dt_str(0),
+        },
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    assert len(resp.data) == 2
+
+
+def test_registrar_pagamento_requires_admin(client: APIClient):
+    """`_can_manage` (não `_can_read`) tem que barrar o POST — por isso o
+    usuário rejeitado aqui é `DIRECTOR` (tem leitura financeira via
+    `_READ_ROLES`, mas não é `ADMIN`), não um usuário sem papel financeiro
+    nenhum: um `RoleCode.USER` puro poderia ser barrado por um guard
+    diferente (ex.: leitura), mascarando uma eventual regressão no guard
+    de `_can_manage` que este teste pretende cobrir (mesmo racional de
+    `test_update_due_day_via_api_requires_admin`)."""
+    tenant, admin = _org("finapi5")
+    with use_tenant(tenant.id):
+        member = UserService().create_user(
+            username="membro_api5", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+        director = UserService().create_user(
+            username="director_fin5", password="supersecret123",
+            role_codes=[RoleCode.DIRECTOR], tenant_id=tenant.id,
+        )
+    client.force_authenticate(director)
+    resp = client.post(
+        "/api/dues/registrar-pagamento",
+        {
+            "user": str(member.id),
+            "amount": "100.00",
+            "method": "dinheiro",
+            "paid_at": _dt_str(0),
+        },
+        format="json",
+    )
+    assert resp.status_code == 422
+
+
+def test_cancelar_pagamento_via_api(client: APIClient):
+    tenant, admin = _org("finapi6")
+    with use_tenant(tenant.id):
+        member = UserService().create_user(
+            username="membro_api6", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    client.post(
+        "/api/billing-profiles",
+        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        format="json",
+    )
+    paid = client.post(
+        "/api/dues/registrar-pagamento",
+        {
+            "user": str(member.id),
+            "amount": "100.00",
+            "method": "dinheiro",
+            "paid_at": _dt_str(0),
+        },
+        format="json",
+    )
+    due_id = paid.data[0]["id"]
+    resp = client.post(f"/api/dues/{due_id}/cancelar-pagamento")
+    assert resp.status_code == 200, resp.data
+    assert resp.data[0]["status"] != "paid"
+
+
+def test_cancelar_pagamento_requires_admin(client: APIClient):
+    """Mesmo racional de `test_registrar_pagamento_requires_admin`: usa
+    `DIRECTOR` (tem `_can_read`, não tem `_can_manage`) para o pagamento
+    rejeitado, isolando o guard de `_can_manage` de `cancelar_pagamento`."""
+    tenant, admin = _org("finapi6b")
+    with use_tenant(tenant.id):
+        member = UserService().create_user(
+            username="membro_api6b", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+        director = UserService().create_user(
+            username="director_fin6b", password="supersecret123",
+            role_codes=[RoleCode.DIRECTOR], tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    client.post(
+        "/api/billing-profiles",
+        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        format="json",
+    )
+    paid = client.post(
+        "/api/dues/registrar-pagamento",
+        {
+            "user": str(member.id),
+            "amount": "100.00",
+            "method": "dinheiro",
+            "paid_at": _dt_str(0),
+        },
+        format="json",
+    )
+    due_id = paid.data[0]["id"]
+
+    client.force_authenticate(director)
+    resp = client.post(f"/api/dues/{due_id}/cancelar-pagamento")
+    assert resp.status_code == 422, resp.data
+
+
+def test_dues_cannot_be_deleted_directly(client: APIClient):
+    tenant, admin = _org("finapi7")
+    with use_tenant(tenant.id):
+        member = UserService().create_user(
+            username="membro_api7", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    client.post(
+        "/api/billing-profiles",
+        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        format="json",
+    )
+    due = client.get(f"/api/dues?user={member.id}").data["results"][0]
+    assert client.delete(f"/api/dues/{due['id']}").status_code == 405

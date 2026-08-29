@@ -11,9 +11,15 @@ from apps.accounts.models import RoleCode
 from core.exceptions import BusinessRuleError
 from core.viewsets import TenantScopedViewSet
 
-from ..models import BillingProfile
+from ..models import BillingProfile, Due
 from ..services import FinanceService
-from .serializers import ActivateBillingSerializer, BillingProfileSerializer, UpdateDueDaySerializer
+from .serializers import (
+    ActivateBillingSerializer,
+    BillingProfileSerializer,
+    DueSerializer,
+    RegisterPaymentSerializer,
+    UpdateDueDaySerializer,
+)
 
 _READ_ROLES = (RoleCode.ADMIN, RoleCode.DIRECTOR, RoleCode.INVENTORY, RoleCode.AUDITOR)
 _MANAGE_ROLES = (RoleCode.ADMIN,)
@@ -75,3 +81,50 @@ class BillingProfileViewSet(TenantScopedViewSet):
             profile=self.get_object(), actor_id=str(request.user.pk)
         )
         return Response(BillingProfileSerializer(profile).data)
+
+
+class DueViewSet(TenantScopedViewSet):
+    serializer_class = DueSerializer
+    queryset = Due.objects.none()
+    service = FinanceService()
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):  # type: ignore[override]
+        if not _can_read(self.request.user):
+            raise BusinessRuleError("Sem permissão para ver o financeiro.", code="forbidden")
+        qs = self.service.dues.all().select_related("billing_profile__user")
+        profile = self.request.query_params.get("billing_profile")
+        user = self.request.query_params.get("user")
+        status_f = self.request.query_params.get("status")
+        if profile:
+            qs = qs.filter(billing_profile_id=profile)
+        if user:
+            qs = qs.filter(billing_profile__user_id=user)
+        if status_f:
+            qs = qs.filter(status=status_f)
+        return qs.order_by("period")
+
+    @extend_schema(request=RegisterPaymentSerializer, responses={200: DueSerializer(many=True)})
+    @action(detail=False, methods=["post"], url_path="registrar-pagamento")
+    def registrar_pagamento(self, request: Request) -> Response:
+        if not _can_manage(request.user):
+            raise BusinessRuleError("Apenas Administrador registra pagamento.", code="forbidden")
+        payload = RegisterPaymentSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        dues = self.service.register_payment(
+            user=payload.validated_data["user"],
+            amount=payload.validated_data["amount"],
+            method=payload.validated_data["method"],
+            paid_at=payload.validated_data["paid_at"],
+            actor_id=str(request.user.pk),
+        )
+        return Response(DueSerializer(dues, many=True).data)
+
+    @extend_schema(responses={200: DueSerializer(many=True)})
+    @action(detail=True, methods=["post"], url_path="cancelar-pagamento")
+    def cancelar_pagamento(self, request: Request, pk: str = "") -> Response:
+        if not _can_manage(request.user):
+            raise BusinessRuleError("Apenas Administrador cancela pagamento.", code="forbidden")
+        dues = self.service.cancel_payment(due_id=pk, actor_id=str(request.user.pk))
+        return Response(DueSerializer(dues, many=True).data)
