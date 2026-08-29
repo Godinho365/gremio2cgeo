@@ -21,6 +21,8 @@ from .repositories import RoleRepository, UserRepository
 
 
 class UserService(BaseService):
+    _BARBERSHOP_ONLY_RANKS = frozenset({"Sd", "Cb"})
+
     def __init__(
         self,
         users: UserRepository | None = None,
@@ -38,8 +40,6 @@ class UserService(BaseService):
             candidate = f"{slug}-{suffix}"
             suffix += 1
         return candidate
-
-    _BARBERSHOP_ONLY_RANKS = frozenset({"Sd", "Cb"})
 
     def _forced_roles_for_rank(self, posto_graduacao: str) -> list[str] | None:
         """Praças (Sd/Cb) só têm o perfil Cliente da Barbearia — regra de hierarquia."""
@@ -105,7 +105,11 @@ class UserService(BaseService):
             entity_type="User",
             entity_id=user.id,
             actor_id=actor_id,
-            diff={"username": username, "roles": effective_role_codes or [], "is_active": is_active},
+            diff={
+                "username": username,
+                "roles": effective_role_codes or [],
+                "is_active": is_active,
+            },
         )
         return user
 
@@ -124,7 +128,9 @@ class UserService(BaseService):
         # Sd/Cb só têm o perfil Cliente da Barbearia — vale mesmo que só o
         # posto tenha mudado nesta chamada, sem pedir troca de perfil.
         effective_posto = fields.get("posto_graduacao", user.posto_graduacao)
-        forced_roles = self._forced_roles_for_rank(effective_posto)
+        forced_roles = self._forced_roles_for_rank(
+            effective_posto if isinstance(effective_posto, str) else user.posto_graduacao
+        )
         effective_role_codes = forced_roles if forced_roles is not None else role_codes
 
         if (
@@ -273,19 +279,35 @@ class UserService(BaseService):
         if posto_graduacao is not None:
             updates["posto_graduacao"] = posto_graduacao.strip()
 
-        changed = {f: v for f, v in updates.items() if getattr(user, f) != v}
+        changed: dict[str, object] = {
+            f: v for f, v in updates.items() if getattr(user, f) != v
+        }
         if not changed:
             return user
+
+        forced_roles = None
+        if "posto_graduacao" in changed:
+            posto_value = changed["posto_graduacao"]
+            forced_roles = self._forced_roles_for_rank(
+                posto_value if isinstance(posto_value, str) else user.posto_graduacao
+            )
+            if (
+                forced_roles is not None
+                and user.has_role(RoleCode.ADMIN)
+                and RoleCode.ADMIN not in forced_roles
+            ):
+                raise BusinessRuleError(
+                    "Você não pode remover o próprio perfil de administrador.",
+                    code="cannot_demote_self",
+                )
 
         for field, value in changed.items():
             setattr(user, field, value)
         user.save(update_fields=list(changed))
 
-        if "posto_graduacao" in changed:
-            forced_roles = self._forced_roles_for_rank(changed["posto_graduacao"])
-            if forced_roles is not None:
-                user.roles.set(self.roles.by_codes(forced_roles))
-                changed["roles"] = forced_roles
+        if forced_roles is not None:
+            user.roles.set(self.roles.by_codes(forced_roles))
+            changed["roles"] = forced_roles
 
         audit.record(
             action="user.profile_updated",

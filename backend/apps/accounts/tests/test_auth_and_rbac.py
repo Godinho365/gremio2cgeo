@@ -613,3 +613,24 @@ def test_signup_with_soldado_rank_gets_barbershop_client_role(client: APIClient)
     u = User.objects.get(email="soldado@ex.com")
     assert u.has_role(RoleCode.BARBERSHOP_CLIENT)
     assert not u.has_role(RoleCode.USER)
+
+
+def test_update_profile_cannot_self_demote_via_rank_change(tenant_a):
+    with use_tenant(tenant_a.id):
+        admin = UserService().create_user(
+            username="admin_ta3", password="supersecret123",
+            role_codes=[RoleCode.ADMIN], tenant_id=tenant_a.id,
+        )
+        with pytest.raises(BusinessRuleError):
+            UserService().update_profile(user=admin, posto_graduacao="Sd")
+        admin.refresh_from_db()
+    assert admin.has_role(RoleCode.ADMIN)
+
+
+def test_patch_me_cannot_self_demote_via_rank_change(client: APIClient):
+    tenant, admin = _make_org("SelfDemote")
+    client.force_authenticate(admin)
+    resp = client.patch("/api/auth/me", {"posto_graduacao": "Cb"}, format="json")
+    assert resp.status_code != 200, resp.data
+    admin.refresh_from_db()
+    assert admin.has_role(RoleCode.ADMIN)

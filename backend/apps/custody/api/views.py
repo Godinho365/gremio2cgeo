@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from apps.accounts.models import RoleCode
 from core.exceptions import BusinessRuleError
+from core.permissions import ExcludesRoles
 from core.viewsets import TenantScopedViewSet
 
 from ..models import OPEN_CUSTODY_STATUSES, Custody, CustodyStatus
@@ -27,7 +28,8 @@ class CustodyViewSet(TenantScopedViewSet):
     serializer_class = CustodySerializer
     queryset = Custody.objects.none()
     service = CustodyService()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ExcludesRoles]
+    excluded_roles = (RoleCode.BARBERSHOP_CLIENT,)
 
     def get_queryset(self):  # type: ignore[override]
         qs = self.service.repository.all().select_related("asset", "holder", "issued_by")

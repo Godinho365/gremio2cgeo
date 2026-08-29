@@ -184,3 +184,15 @@ def test_delete_inventory_is_role_guarded(client: APIClient):
     client.force_authenticate(comum)
     assert client.delete(f"/api/inventories/{inv['id']}").status_code == 422
     assert client.patch(f"/api/inventories/{inv['id']}", {"title": "x"}, format="json").status_code == 422
+
+
+def test_barbershop_client_cannot_list_inventories(client: APIClient):
+    tenant, admin = _org("inv_bc1")
+    with use_tenant(tenant.id):
+        cliente = UserService().create_user(
+            username="cliente_inv1", password="supersecret123",
+            role_codes=[RoleCode.BARBERSHOP_CLIENT], tenant_id=tenant.id,
+        )
+    client.force_authenticate(cliente)
+    resp = client.get("/api/inventories")
+    assert resp.status_code == 403

@@ -235,3 +235,15 @@ def test_custodies_tenant_scoped(client: APIClient):
     client.post("/api/custodies", _payload(asset_b, admin_b), format="json")
     client.force_authenticate(admin_a)
     assert client.get("/api/custodies").data["count"] == 0
+
+
+def test_barbershop_client_cannot_list_custodies(client: APIClient):
+    tenant, admin = _org("cust_bc1")
+    with use_tenant(tenant.id):
+        cliente = UserService().create_user(
+            username="cliente_cust1", password="supersecret123",
+            role_codes=[RoleCode.BARBERSHOP_CLIENT], tenant_id=tenant.id,
+        )
+    client.force_authenticate(cliente)
+    resp = client.get("/api/custodies")
+    assert resp.status_code == 403

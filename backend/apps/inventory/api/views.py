@@ -9,6 +9,7 @@ from rest_framework.response import Response
 
 from apps.accounts.models import RoleCode
 from core.exceptions import BusinessRuleError
+from core.permissions import ExcludesRoles
 from core.viewsets import TenantScopedViewSet
 
 from ..models import Inventory, InventoryItem
@@ -32,7 +33,8 @@ class InventoryViewSet(TenantScopedViewSet):
     serializer_class = InventorySerializer
     queryset = Inventory.objects.none()
     service = InventoryService()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ExcludesRoles]
+    excluded_roles = (RoleCode.BARBERSHOP_CLIENT,)
 
     def get_queryset(self):  # type: ignore[override]
         return Inventory.objects.for_current_tenant().alive().select_related("responsible")

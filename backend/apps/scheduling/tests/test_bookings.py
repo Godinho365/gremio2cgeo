@@ -294,3 +294,14 @@ def test_barbershop_client_cannot_book_or_read_availability(client: APIClient):
     )
     assert resp.status_code == 403
     assert client.get("/api/availabilities").status_code == 403
+
+
+def test_plain_user_can_still_read_availabilities(client: APIClient):
+    tenant, admin = _org("bk9")
+    with use_tenant(tenant.id):
+        plain = UserService().create_user(
+            username="plain9", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(plain)
+    assert client.get("/api/availabilities").status_code == 200
