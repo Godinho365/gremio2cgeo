@@ -1,4 +1,4 @@
-import { IconLock, IconUser, IconWallet } from "@tabler/icons-react";
+import { IconLock, IconReceipt2, IconUser, IconWallet } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { useAuth } from "../auth/AuthContext";
@@ -10,6 +10,11 @@ import {
   useUpdateProfile,
 } from "../features/accounts/api";
 import { brl, useCredits } from "../features/barbershop/api";
+import {
+  FINANCIAL_STATUS_BADGE,
+  FINANCIAL_STATUS_LABEL,
+  useMyFinance,
+} from "../features/finance/api";
 import { formatDateBr, maskCpf, maskPhone } from "../lib/masks";
 
 function apiMessage(err: unknown, fallback: string): string {
@@ -282,6 +287,48 @@ function CreditCard() {
   );
 }
 
+/** Situação da mensalidade — só aparece pra quem está na relação financeira. */
+function FinanceCard() {
+  const { data, isLoading } = useMyFinance();
+  if (isLoading || !data) return null;
+
+  return (
+    <div className="card mt-3">
+      <div className="card-header d-flex align-items-center gap-2">
+        <IconReceipt2 size={20} />
+        <h3 className="card-title m-0">Minha mensalidade</h3>
+        <span className={`badge ms-auto ${FINANCIAL_STATUS_BADGE[data.financial_status]}`}>
+          {FINANCIAL_STATUS_LABEL[data.financial_status]}
+        </span>
+      </div>
+      <div className="card-body">
+        <div className="datagrid">
+          <div className="datagrid-item">
+            <div className="datagrid-title">Próximo vencimento</div>
+            <div className="datagrid-content">
+              {data.next_due_date
+                ? new Date(data.next_due_date).toLocaleDateString("pt-BR")
+                : "—"}
+            </div>
+          </div>
+          <div className="datagrid-item">
+            <div className="datagrid-title">Meses pagos</div>
+            <div className="datagrid-content">{data.months_paid}</div>
+          </div>
+          <div className="datagrid-item">
+            <div className="datagrid-title">Meses em aberto</div>
+            <div className="datagrid-content">{data.months_open}</div>
+          </div>
+          <div className="datagrid-item">
+            <div className="datagrid-title">Valor pendente</div>
+            <div className="datagrid-content">R$ {data.pending_amount}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const { user } = useAuth();
   if (!user) return null;
@@ -331,6 +378,7 @@ export default function ProfilePage() {
       </div>
 
       <CreditCard />
+      <FinanceCard />
 
       <div className="mt-3">
         <ProfileForm />
