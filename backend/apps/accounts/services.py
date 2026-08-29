@@ -39,6 +39,14 @@ class UserService(BaseService):
             suffix += 1
         return candidate
 
+    _BARBERSHOP_ONLY_RANKS = frozenset({"Sd", "Cb"})
+
+    def _forced_roles_for_rank(self, posto_graduacao: str) -> list[str] | None:
+        """Praças (Sd/Cb) só têm o perfil Cliente da Barbearia — regra de hierarquia."""
+        if posto_graduacao in self._BARBERSHOP_ONLY_RANKS:
+            return [RoleCode.BARBERSHOP_CLIENT]
+        return None
+
     @transaction.atomic
     def create_user(
         self,
@@ -88,15 +96,16 @@ class UserService(BaseService):
         except IntegrityError as exc:  # pragma: no cover - defensive
             raise BusinessRuleError("Não foi possível criar o usuário.") from exc
 
-        if role_codes:
-            user.roles.set(self.roles.by_codes(role_codes))
+        effective_role_codes = self._forced_roles_for_rank(posto_graduacao) or role_codes
+        if effective_role_codes:
+            user.roles.set(self.roles.by_codes(effective_role_codes))
 
         audit.record(
             action="user.created",
             entity_type="User",
             entity_id=user.id,
             actor_id=actor_id,
-            diff={"username": username, "roles": role_codes or [], "is_active": is_active},
+            diff={"username": username, "roles": effective_role_codes or [], "is_active": is_active},
         )
         return user
 
@@ -112,7 +121,17 @@ class UserService(BaseService):
         """Edição de usuário pelo administrador (RBAC, dados cadastrais e acesso)."""
         is_self = user.pk == actor.pk
 
-        if role_codes is not None and is_self and RoleCode.ADMIN not in role_codes:
+        # Sd/Cb só têm o perfil Cliente da Barbearia — vale mesmo que só o
+        # posto tenha mudado nesta chamada, sem pedir troca de perfil.
+        effective_posto = fields.get("posto_graduacao", user.posto_graduacao)
+        forced_roles = self._forced_roles_for_rank(effective_posto)
+        effective_role_codes = forced_roles if forced_roles is not None else role_codes
+
+        if (
+            effective_role_codes is not None
+            and is_self
+            and RoleCode.ADMIN not in effective_role_codes
+        ):
             raise BusinessRuleError(
                 "Você não pode remover o próprio perfil de administrador.",
                 code="cannot_demote_self",
@@ -143,9 +162,9 @@ class UserService(BaseService):
             for field, value in changed.items():
                 setattr(user, field, value)
             user.save(update_fields=list(changed))
-        if role_codes is not None:
-            user.roles.set(self.roles.by_codes(role_codes))
-            changed["roles"] = role_codes
+        if effective_role_codes is not None:
+            user.roles.set(self.roles.by_codes(effective_role_codes))
+            changed["roles"] = effective_role_codes
 
         if changed:
             audit.record(
@@ -261,6 +280,12 @@ class UserService(BaseService):
         for field, value in changed.items():
             setattr(user, field, value)
         user.save(update_fields=list(changed))
+
+        if "posto_graduacao" in changed:
+            forced_roles = self._forced_roles_for_rank(changed["posto_graduacao"])
+            if forced_roles is not None:
+                user.roles.set(self.roles.by_codes(forced_roles))
+                changed["roles"] = forced_roles
 
         audit.record(
             action="user.profile_updated",

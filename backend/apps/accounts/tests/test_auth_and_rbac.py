@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 from apps.accounts.models import Role, RoleCode, User
 from apps.accounts.services import OnboardingService, UserService
 from core.context import use_tenant
+from core.exceptions import BusinessRuleError
 
 pytestmark = pytest.mark.django_db
 
@@ -541,3 +542,74 @@ def test_user_can_change_their_own_rank(client: APIClient):
 def test_barbershop_client_role_is_seeded():
     assert RoleCode.BARBERSHOP_CLIENT == "barbershop_client"
     assert Role.objects.filter(code=RoleCode.BARBERSHOP_CLIENT).exists()
+
+
+def test_create_user_with_soldado_rank_forces_barbershop_client_role(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="soldado1",
+            password="supersecret123",
+            posto_graduacao="Sd",
+            role_codes=[RoleCode.ADMIN],
+            tenant_id=tenant_a.id,
+        )
+    assert list(user.roles.values_list("code", flat=True)) == [RoleCode.BARBERSHOP_CLIENT]
+
+
+def test_update_user_rank_change_to_cabo_overrides_role(tenant_a):
+    with use_tenant(tenant_a.id):
+        admin = UserService().create_user(
+            username="admin_ta", password="supersecret123",
+            role_codes=[RoleCode.ADMIN], tenant_id=tenant_a.id,
+        )
+        target = UserService().create_user(
+            username="diretor1", password="supersecret123",
+            role_codes=[RoleCode.DIRECTOR], tenant_id=tenant_a.id,
+        )
+        UserService().update_user(user=target, actor=admin, posto_graduacao="Cb")
+        target.refresh_from_db()
+    assert list(target.roles.values_list("code", flat=True)) == [RoleCode.BARBERSHOP_CLIENT]
+
+
+def test_update_user_cannot_self_demote_via_rank_change(tenant_a):
+    with use_tenant(tenant_a.id):
+        admin = UserService().create_user(
+            username="admin_ta2", password="supersecret123",
+            role_codes=[RoleCode.ADMIN], tenant_id=tenant_a.id,
+        )
+        with pytest.raises(BusinessRuleError):
+            UserService().update_user(user=admin, actor=admin, posto_graduacao="Sd")
+
+
+def test_update_profile_rank_change_to_soldado_overrides_role(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="usuario1", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        UserService().update_profile(user=user, posto_graduacao="Sd")
+        user.refresh_from_db()
+    assert list(user.roles.values_list("code", flat=True)) == [RoleCode.BARBERSHOP_CLIENT]
+
+
+def test_signup_with_soldado_rank_gets_barbershop_client_role(client: APIClient):
+    _make_org("BaseSd")
+    resp = client.post(
+        "/api/auth/signup",
+        {
+            "full_name": "Soldado Teste",
+            "nome_guerra": "TESTE",
+            "posto_graduacao": "Sd",
+            "cpf": "111.444.777-35",
+            "birth_date": "1990-05-10",
+            "email": "soldado@ex.com",
+            "email_confirm": "soldado@ex.com",
+            "phone": "(11) 99999-9999",
+            "password": "supersecret123",
+        },
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    u = User.objects.get(email="soldado@ex.com")
+    assert u.has_role(RoleCode.BARBERSHOP_CLIENT)
+    assert not u.has_role(RoleCode.USER)
