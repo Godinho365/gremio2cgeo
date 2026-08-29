@@ -331,3 +331,51 @@ def test_roll_dues_task_runs_for_all_tenants(tenant_a, tenant_b):
 
     processed = roll_dues()
     assert processed == 2
+
+
+def test_summary_for_reports_the_fields_from_the_spec(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro14", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        profile = FinanceService().activate_billing(
+            user=user, due_day=10, started_period=_period(0)
+        )
+        paid_at = _dt(0)
+        FinanceService().register_payment(
+            user=user, amount=Decimal("200.00"), method="dinheiro", paid_at=paid_at
+        )
+        # register_payment busca o profile de novo internamente e atualiza
+        # essa instância — a variável local `profile` (retornada por
+        # activate_billing, antes do pagamento) ficou obsoleta.
+        profile.refresh_from_db()
+        summary = FinanceService().summary_for(profile)
+    assert summary["months_paid"] == 2
+    # register_payment (Task 4) mantém WINDOW_MONTHS_AHEAD (2) mensalidades
+    # abertas à frente do que acabou de ser pago — não apenas 1 (ver comentário
+    # em FinanceService.register_payment / _extend_until).
+    assert summary["months_open"] == 2
+    assert summary["paid_through_period"] == _period(1)
+    assert summary["pending_amount"] == Decimal("200.00")
+    assert summary["last_payment_at"] == paid_at
+
+
+def test_dashboard_counts_active_profiles_by_financial_status(tenant_a):
+    with use_tenant(tenant_a.id):
+        em_dia = UserService().create_user(
+            username="membro15", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        atrasado = UserService().create_user(
+            username="membro16", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=em_dia, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(
+            user=atrasado, due_day=10, started_period=_period(-2)
+        )
+        FinanceService().roll_all()
+        data = FinanceService().dashboard()
+    assert data["total_users"] == 2
+    assert data["overdue_count"] + data["delinquent_count"] >= 1

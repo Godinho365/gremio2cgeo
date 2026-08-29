@@ -5,10 +5,11 @@ Ver docs/superpowers/specs/2026-08-29-modulo-financeiro-fase1-design.md.
 from __future__ import annotations
 
 import calendar
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from apps.accounts.models import BARBERSHOP_ONLY_RANKS, User
@@ -19,6 +20,7 @@ from core.exceptions import BusinessRuleError
 from core.services import BaseService
 
 from .models import (
+    OPEN_DUE_STATUSES,
     BillingProfile,
     Due,
     DueStatus,
@@ -372,3 +374,70 @@ class FinanceService(BaseService):
             profile.save(update_fields=["financial_status", "updated_at"])
             processed += 1
         return processed
+
+    def summary_for(self, profile: BillingProfile) -> dict:
+        today = timezone.localdate()
+        all_dues = list(self.dues.for_profile(profile).order_by("period"))
+        paid = [d for d in all_dues if d.status == DueStatus.PAID]
+        open_dues = [d for d in all_dues if d.status in OPEN_DUE_STATUSES]
+        next_due = open_dues[0] if open_dues else None
+        return {
+            "financial_status": profile.financial_status,
+            "due_day": profile.due_day,
+            "next_due_date": next_due.due_date if next_due else None,
+            "days_until_due": (next_due.due_date - today).days if next_due else None,
+            "days_overdue": max(0, (today - next_due.due_date).days) if next_due else 0,
+            "months_paid": len(paid),
+            "months_paid_in_advance": sum(1 for d in paid if d.paid_in_advance),
+            "months_open": len(open_dues),
+            "pending_amount": sum((d.amount for d in open_dues), Decimal("0.00")),
+            "last_payment_at": profile.last_payment_at,
+            "paid_through_period": paid[-1].period if paid else None,
+        }
+
+    def dashboard(self, *, date_from: date | None = None, date_to: date | None = None) -> dict:
+        today = timezone.localdate()
+        profiles = list(self.profiles.active_profiles())
+        by_status = {s.value: 0 for s in FinancialStatus}
+        for profile in profiles:
+            by_status[profile.financial_status] += 1
+
+        soon_cutoff = today + timedelta(days=30)
+        upcoming = self.dues.query().filter(
+            billing_profile__is_active=True,
+            status__in=(DueStatus.PENDING, DueStatus.DUE_SOON, DueStatus.DUE_TODAY),
+            due_date__lte=soon_cutoff,
+        )
+        overdue = self.dues.query().filter(
+            billing_profile__is_active=True, status__in=(DueStatus.OVERDUE, DueStatus.DELINQUENT)
+        )
+        pending = self.dues.query().filter(
+            billing_profile__is_active=True, status__in=OPEN_DUE_STATUSES
+        )
+
+        payments_qs = self.payments.query().filter(status=PaymentStatus.APPROVED)
+        if date_from:
+            payments_qs = payments_qs.filter(paid_at__date__gte=date_from)
+        if date_to:
+            payments_qs = payments_qs.filter(paid_at__date__lte=date_to)
+        received = payments_qs.aggregate(s=Sum("amount"))["s"] or Decimal("0.00")
+
+        advance_credit = self.credits.query().filter(
+            reason=FinanceCreditReason.OVERPAYMENT
+        ).aggregate(s=Sum("amount"))["s"] or Decimal("0.00")
+
+        return {
+            "total_users": len(profiles),
+            "up_to_date_count": by_status[FinancialStatus.UP_TO_DATE],
+            "paid_in_advance_count": by_status[FinancialStatus.PAID_IN_ADVANCE],
+            "due_soon_count": by_status[FinancialStatus.DUE_SOON],
+            "due_today_count": by_status[FinancialStatus.DUE_TODAY],
+            "overdue_count": by_status[FinancialStatus.OVERDUE],
+            "delinquent_count": by_status[FinancialStatus.DELINQUENT],
+            "dues_upcoming_30_days": upcoming.count(),
+            "dues_overdue": overdue.count(),
+            "payments_received": received,
+            "pending_amount": pending.aggregate(s=Sum("amount"))["s"] or Decimal("0.00"),
+            "advance_payments_received": advance_credit,
+            "upcoming_receivable": upcoming.aggregate(s=Sum("amount"))["s"] or Decimal("0.00"),
+        }
