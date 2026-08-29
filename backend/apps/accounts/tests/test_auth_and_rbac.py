@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 from rest_framework.test import APIClient
 
-from apps.accounts.models import RoleCode, User
+from apps.accounts.models import Role, RoleCode, User
 from apps.accounts.services import OnboardingService, UserService
 from core.context import use_tenant
 
@@ -536,3 +536,8 @@ def test_user_can_change_their_own_rank(client: APIClient):
     pessoa.refresh_from_db()
     assert pessoa.posto_graduacao == "Cb"
     assert pessoa.display_name.startswith("Cb")
+
+
+def test_barbershop_client_role_is_seeded():
+    assert RoleCode.BARBERSHOP_CLIENT == "barbershop_client"
+    assert Role.objects.filter(code=RoleCode.BARBERSHOP_CLIENT).exists()
