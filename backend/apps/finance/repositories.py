@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from django.db import models
 
 from core.repositories import BaseRepository
 
-from .models import OPEN_DUE_STATUSES, BillingProfile, Due
+from .models import OPEN_DUE_STATUSES, BillingProfile, Due, FinanceCredit
 
 
 class FinanceRepository(BaseRepository[BillingProfile]):
@@ -33,3 +34,14 @@ class DueRepository(BaseRepository[Due]):
     def latest_period(self, billing_profile: BillingProfile) -> date | None:
         last = self.for_profile(billing_profile).order_by("-period").first()
         return last.period if last else None
+
+
+class FinanceCreditRepository(BaseRepository[FinanceCredit]):
+    model = FinanceCredit
+
+    def for_profile(self, billing_profile: BillingProfile) -> models.QuerySet[FinanceCredit]:
+        return self.query().filter(billing_profile=billing_profile)
+
+    def balance(self, billing_profile: BillingProfile) -> Decimal:
+        total = self.for_profile(billing_profile).aggregate(s=models.Sum("amount"))["s"]
+        return total or Decimal("0.00")

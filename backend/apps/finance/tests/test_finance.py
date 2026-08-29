@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -134,4 +135,75 @@ def test_activate_billing_twice_is_rejected(tenant_a):
         with pytest.raises(BusinessRuleError):
             FinanceService().activate_billing(
                 user=user, due_day=15, started_period=_period(0)
+            )
+
+
+def test_register_payment_allocates_across_periods_advance_example(tenant_a):
+    """R$100/mês, pagamento de R$500 → 5 meses pagos, o 6º pendente (exemplo do spec)."""
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro4", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=user, due_day=10, started_period=_period(0))
+        paid_at = _dt(0)
+        settled = FinanceService().register_payment(
+            user=user, amount=Decimal("500.00"), method="dinheiro", paid_at=paid_at,
+        )
+        settled_periods = [d.period for d in settled]
+        profile = BillingProfile.objects.get(user=user)
+        all_dues = {d.period: d.status for d in Due.objects.filter(billing_profile=profile)}
+    assert settled_periods == [_period(0), _period(1), _period(2), _period(3), _period(4)]
+    assert all_dues[_period(5)] == DueStatus.PENDING
+    # O mês 0 era o mês corrente no pagamento → não é "antecipado"; o mês 4 é.
+    assert settled[0].paid_in_advance is False
+    assert settled[-1].paid_in_advance is True
+
+
+def test_register_payment_extends_window_beyond_two_months(tenant_a):
+    """6 meses pagos de uma vez, mas só 3 (atual+2) tinham sido gerados."""
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro5", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=user, due_day=10, started_period=_period(0))
+        paid_at = _dt(0)
+        settled = FinanceService().register_payment(
+            user=user, amount=Decimal("600.00"), method="dinheiro", paid_at=paid_at,
+        )
+    assert len(settled) == 6
+    assert settled[-1].period == _period(5)
+
+
+def test_register_payment_remainder_becomes_credit(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro6", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        profile = FinanceService().activate_billing(
+            user=user, due_day=10, started_period=_period(0)
+        )
+        paid_at = _dt(0)
+        settled = FinanceService().register_payment(
+            user=user, amount=Decimal("150.00"), method="dinheiro", paid_at=paid_at,
+        )
+        credit_balance = FinanceCredit.objects.filter(billing_profile=profile).aggregate(
+            s=Sum("amount")
+        )["s"]
+    assert len(settled) == 1
+    assert credit_balance == Decimal("50.00")
+
+
+def test_register_payment_rejects_zero_or_negative(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro7", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=user, due_day=10, started_period=_period(0))
+        with pytest.raises(BusinessRuleError):
+            FinanceService().register_payment(
+                user=user, amount=Decimal("0"), method="dinheiro", paid_at=timezone.now()
             )

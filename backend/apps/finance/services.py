@@ -5,19 +5,28 @@ Ver docs/superpowers/specs/2026-08-29-modulo-financeiro-fase1-design.md.
 from __future__ import annotations
 
 import calendar
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import BARBERSHOP_ONLY_RANKS, User
+from apps.payments.models import PaymentStatus
 from apps.payments.repositories import PaymentRepository
 from core import audit
 from core.exceptions import BusinessRuleError
 from core.services import BaseService
 
-from .models import BillingProfile, Due, DueStatus, FinancialStatus, membership_fee
-from .repositories import DueRepository, FinanceRepository
+from .models import (
+    BillingProfile,
+    Due,
+    DueStatus,
+    FinanceCreditReason,
+    FinancialStatus,
+    membership_fee,
+)
+from .repositories import DueRepository, FinanceCreditRepository, FinanceRepository
 
 
 def _first_of_month(d: date) -> date:
@@ -46,10 +55,12 @@ class FinanceService(BaseService):
         profiles: FinanceRepository | None = None,
         dues: DueRepository | None = None,
         payments: PaymentRepository | None = None,
+        credits: FinanceCreditRepository | None = None,
     ) -> None:
         self.profiles = profiles or FinanceRepository()
         self.dues = dues or DueRepository()
         self.payments = payments or PaymentRepository()
+        self.credits = credits or FinanceCreditRepository()
 
     def _refuse_if_ineligible(self, user: User) -> None:
         if user.posto_graduacao in BARBERSHOP_ONLY_RANKS:
@@ -144,3 +155,91 @@ class FinanceService(BaseService):
             diff={"due_day": due_day, "started_period": str(profile.started_period)},
         )
         return profile
+
+    def _extend_until(self, profile: BillingProfile, min_open: int, today: date) -> None:
+        while self.dues.open_for_profile(profile).count() < min_open:
+            latest = self.dues.latest_period(profile)
+            period = _add_months(latest, 1) if latest else profile.started_period
+            self._create_due(profile, period, today)
+
+    @transaction.atomic
+    def register_payment(
+        self,
+        *,
+        user: User,
+        amount: Decimal,
+        method: str,
+        paid_at: datetime,
+        actor_id: str | None = None,
+    ) -> list[Due]:
+        amount = Decimal(str(amount))
+        if amount <= 0:
+            raise BusinessRuleError(
+                "Valor do pagamento deve ser maior que zero.", code="invalid_amount"
+            )
+        profile = self.profiles.profile_for_user(user.pk)
+        if profile is None or not profile.is_active:
+            raise BusinessRuleError(
+                "Usuário não está na relação financeira.", code="not_in_billing"
+            )
+
+        fee = membership_fee()
+        periods_covered = int(amount // fee)
+        remainder = amount - (periods_covered * fee)
+
+        payment = self.payments.create(
+            provider="",
+            method=method,
+            amount=amount,
+            status=PaymentStatus.APPROVED,
+            payer_id=user.pk,
+            paid_at=paid_at,
+            description="Mensalidade",
+            created_by_id=actor_id,
+        )
+
+        settled: list[Due] = []
+        if periods_covered > 0:
+            # Além dos `periods_covered` a liquidar, mantém o mesmo colchão de
+            # WINDOW_MONTHS_AHEAD sempre visível à frente do que acabou de ser
+            # pago — o mesmo invariante de janela que `_ensure_window` mantém
+            # a partir de hoje, agora reancorado na nova fronteira paga (senão
+            # um pagamento que cobre mais meses do que os já gerados deixaria
+            # a pessoa sem nenhuma mensalidade pendente visível).
+            self._extend_until(
+                profile, periods_covered + self.WINDOW_MONTHS_AHEAD, today=paid_at.date()
+            )
+            open_dues = list(self.dues.open_for_profile(profile)[:periods_covered])
+            current_period = _first_of_month(paid_at.date())
+            for due in open_dues:
+                due.status = DueStatus.PAID
+                due.paid_in_advance = due.period > current_period
+                due.settled_by = payment
+                due.paid_at = paid_at
+                due.save(
+                    update_fields=[
+                        "status", "paid_in_advance", "settled_by", "paid_at", "updated_at"
+                    ]
+                )
+                settled.append(due)
+
+        if remainder > 0:
+            self.credits.create(
+                billing_profile=profile,
+                amount=remainder,
+                reason=FinanceCreditReason.OVERPAYMENT,
+                payment=payment,
+            )
+
+        profile.last_payment_at = paid_at
+        profile.financial_status = self._compute_financial_status(profile)
+        profile.save(update_fields=["last_payment_at", "financial_status", "updated_at"])
+
+        audit.record(
+            action="finance.payment_registered",
+            entity_type="BillingProfile",
+            entity_id=profile.id,
+            actor_id=actor_id,
+            diff={"amount": str(amount), "method": method, "periods": periods_covered},
+        )
+        return settled
