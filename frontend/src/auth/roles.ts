@@ -6,6 +6,8 @@ export const ADMIN_ROLES = ["admin"];
 export const CADASTROS_ROLES = ["admin", "director"];
 /** Quem administra a barbearia: barbeiros, grade de trabalho e agenda do dia. */
 export const BARBERSHOP_ROLES = ["admin", "barbershop"];
+/** Quem enxerga Catálogo e Agenda (reserva de bens do módulo Patrimônio). */
+export const PATRIMONIO_ROLES = [...STAFF_ROLES, "user"];
 /** Perfis com mais de um módulo — só eles passam pela tela de escolha. */
 export const MODULE_CHOOSER_ROLES = [...new Set([...STAFF_ROLES, ...BARBERSHOP_ROLES])];
 
@@ -35,9 +37,12 @@ export function canChooseModule(user: CurrentUser | null): boolean {
 }
 
 /**
- * Rota inicial após o login: quem administra escolhe o módulo; o usuário comum
- * entra direto no catálogo.
+ * Rota inicial após o login: quem administra escolhe o módulo; quem tem
+ * acesso ao Patrimônio entra direto no catálogo; quem só tem a Barbearia
+ * (ex.: Cliente da Barbearia) entra direto nela.
  */
 export function homePath(user: CurrentUser | null): string {
-  return canChooseModule(user) ? "/modulos" : "/catalogo";
+  if (canChooseModule(user)) return "/modulos";
+  if (hasAnyRole(user, PATRIMONIO_ROLES)) return "/catalogo";
+  return "/barbearia";
 }

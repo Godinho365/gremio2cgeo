@@ -10,6 +10,7 @@ import {
   CADASTROS_ROLES,
   homePath,
   isStaff,
+  PATRIMONIO_ROLES,
   STAFF_ROLES,
 } from "./auth/roles";
 import Layout from "./components/Layout";
@@ -53,8 +54,10 @@ export default function App() {
             <Route path="financeiro" element={<FinancePage />} />
           </Route>
           <Route path="perfil" element={<ProfilePage />} />
-          <Route path="catalogo" element={<CatalogPage />} />
-          <Route path="agenda" element={<AgendaPage />} />
+          <Route element={<RequireRole roles={PATRIMONIO_ROLES} />}>
+            <Route path="catalogo" element={<CatalogPage />} />
+            <Route path="agenda" element={<AgendaPage />} />
+          </Route>
           <Route path="barbearia" element={<BarbershopPage />} />
           <Route element={<RequireRole roles={BARBERSHOP_ROLES} />}>
             <Route path="barbearia/agenda" element={<BarbershopAgendaPage />} />

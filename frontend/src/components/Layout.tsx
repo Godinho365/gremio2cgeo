@@ -25,6 +25,7 @@ import {
   BARBERSHOP_ROLES,
   CADASTROS_ROLES,
   canChooseModule,
+  PATRIMONIO_ROLES,
   STAFF_ROLES,
 } from "../auth/roles";
 import { brandFor } from "../branding";
@@ -49,8 +50,8 @@ const NAV: Nav[] = [
   { to: "/", label: "Dashboard", icon: IconLayoutDashboard, end: true, module: "patrimonio", roles: STAFF_ROLES },
   { to: "/cadastros", label: "Cadastros", icon: IconSettings, end: false, module: "patrimonio", roles: CADASTROS_ROLES },
   { to: "/patrimonio", label: "Patrimônio", icon: IconBox, end: false, module: "patrimonio", roles: STAFF_ROLES },
-  { to: "/catalogo", label: "Catálogo", icon: IconBuildingStore, end: false, module: "patrimonio" },
-  { to: "/agenda", label: "Agenda", icon: IconCalendarEvent, end: false, module: "patrimonio" },
+  { to: "/catalogo", label: "Catálogo", icon: IconBuildingStore, end: false, module: "patrimonio", roles: PATRIMONIO_ROLES },
+  { to: "/agenda", label: "Agenda", icon: IconCalendarEvent, end: false, module: "patrimonio", roles: PATRIMONIO_ROLES },
   { to: "/cautelas", label: "Cautelas", icon: IconFileText, end: false, module: "patrimonio", roles: STAFF_ROLES },
   { to: "/inventario", label: "Inventário", icon: IconClipboardCheck, end: false, module: "patrimonio", roles: STAFF_ROLES },
   { to: "/barbearia", label: "Barbearia", icon: IconScissors, end: true, module: "barbearia" },

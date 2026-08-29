@@ -29,6 +29,7 @@ export const ROLES = [
   { value: "user", label: "Usuário" },
   { value: "auditor", label: "Auditor" },
   { value: "barbershop", label: "Administrador da Barbearia" },
+  { value: "barbershop_client", label: "Cliente da Barbearia" },
 ];
 
 export const ROLE_LABEL: Record<string, string> = Object.fromEntries(
