@@ -625,3 +625,32 @@ def test_dues_cannot_be_deleted_directly(client: APIClient):
     )
     due = client.get(f"/api/dues?user={member.id}").data["results"][0]
     assert client.delete(f"/api/dues/{due['id']}").status_code == 405
+
+
+def test_dues_cannot_be_created_directly(client: APIClient):
+    """`Due` só nasce via `registrar-pagamento`/`activate_billing` — um POST
+    genérico em /api/dues cai no `create()` herdado do `ModelViewSet`, que
+    nunca é chamado pelas ações nomeadas. `DueSerializer` marca todo campo
+    como `read_only`, então sem o guard explícito o `is_valid()` passaria
+    vazio e o `.save()` estouraria um `IntegrityError` (500) — inclusive
+    para o Administrador, já que `_can_manage`/`_can_read` só rodam dentro
+    das actions nomeadas, nunca neste caminho."""
+    tenant, admin = _org("finapi8")
+    client.force_authenticate(admin)
+    resp = client.post("/api/dues", {}, format="json")
+    assert resp.status_code == 405, resp.data
+
+
+def test_cancelar_pagamento_on_unknown_due_returns_404(client: APIClient):
+    """`cancelar_pagamento` chamava `self.service.cancel_payment(due_id=pk)`
+    direto, que faz `self.dues.get(due_id)` internamente — para um `due_id`
+    inexistente (ou de outro tenant) isso levanta `Due.DoesNotExist`, que o
+    `api_exception_handler` não traduz, virando 500. `self.get_object()`
+    faz o mesmo lookup escopado por tenant só que via o caminho padrão do
+    DRF, que levanta `Http404` (-> 404 limpo)."""
+    import uuid
+
+    tenant, admin = _org("finapi9")
+    client.force_authenticate(admin)
+    resp = client.post(f"/api/dues/{uuid.uuid4()}/cancelar-pagamento")
+    assert resp.status_code == 404, resp.data

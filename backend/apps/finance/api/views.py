@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
+from rest_framework.exceptions import MethodNotAllowed
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -105,6 +106,9 @@ class DueViewSet(TenantScopedViewSet):
             qs = qs.filter(status=status_f)
         return qs.order_by("period")
 
+    def create(self, request: Request, *args: object, **kwargs: object) -> Response:
+        raise MethodNotAllowed(request.method)
+
     @extend_schema(request=RegisterPaymentSerializer, responses={200: DueSerializer(many=True)})
     @action(detail=False, methods=["post"], url_path="registrar-pagamento")
     def registrar_pagamento(self, request: Request) -> Response:
@@ -126,5 +130,6 @@ class DueViewSet(TenantScopedViewSet):
     def cancelar_pagamento(self, request: Request, pk: str = "") -> Response:
         if not _can_manage(request.user):
             raise BusinessRuleError("Apenas Administrador cancela pagamento.", code="forbidden")
-        dues = self.service.cancel_payment(due_id=pk, actor_id=str(request.user.pk))
+        due = self.get_object()
+        dues = self.service.cancel_payment(due_id=due.pk, actor_id=str(request.user.pk))
         return Response(DueSerializer(dues, many=True).data)
