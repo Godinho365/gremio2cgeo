@@ -13,7 +13,6 @@ from django.utils import timezone
 from apps.accounts.models import BARBERSHOP_ONLY_RANKS, User
 from apps.payments.repositories import PaymentRepository
 from core import audit
-from core.context import get_current_tenant_id
 from core.exceptions import BusinessRuleError
 from core.services import BaseService
 
@@ -72,8 +71,7 @@ class FinanceService(BaseService):
 
     def _create_due(self, profile: BillingProfile, period: date, today: date) -> Due:
         due_date = _due_date_for(period, profile.due_day)
-        return Due.objects.create(
-            tenant_id=get_current_tenant_id(),
+        return self.dues.create(
             billing_profile=profile,
             period=period,
             due_date=due_date,
