@@ -19,6 +19,7 @@ from apps.finance.models import (
 )
 from apps.finance.services import FinanceService
 from core.context import use_tenant
+from core.exceptions import BusinessRuleError
 
 pytestmark = pytest.mark.django_db
 
@@ -84,3 +85,53 @@ def test_billing_profile_and_due_models_exist(tenant_a):
         )
     assert profile.financial_status == FinancialStatus.UP_TO_DATE
     assert due.billing_profile_id == profile.id
+
+
+def test_due_date_respects_short_months():
+    from apps.finance.services import _due_date_for
+
+    assert _due_date_for(date(2026, 2, 1), 31) == date(2026, 2, 28)
+    assert _due_date_for(date(2026, 8, 1), 31) == date(2026, 8, 31)
+    assert _due_date_for(date(2026, 8, 1), 10) == date(2026, 8, 10)
+
+
+def test_activate_billing_generates_current_and_two_months_ahead(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro2", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        profile = FinanceService().activate_billing(
+            user=user, due_day=10, started_period=_period(0),
+        )
+        periods = list(
+            Due.objects.filter(billing_profile=profile).order_by("period").values_list(
+                "period", flat=True
+            )
+        )
+    assert periods == [_period(0), _period(1), _period(2)]
+
+
+def test_activate_billing_refuses_soldado_or_cabo(tenant_a):
+    with use_tenant(tenant_a.id):
+        soldado = UserService().create_user(
+            username="soldado_fin", password="supersecret123",
+            posto_graduacao="Sd", tenant_id=tenant_a.id,
+        )
+        with pytest.raises(BusinessRuleError):
+            FinanceService().activate_billing(
+                user=soldado, due_day=10, started_period=_period(0)
+            )
+
+
+def test_activate_billing_twice_is_rejected(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro3", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=user, due_day=10, started_period=_period(0))
+        with pytest.raises(BusinessRuleError):
+            FinanceService().activate_billing(
+                user=user, due_day=15, started_period=_period(0)
+            )
