@@ -55,71 +55,73 @@ function ActivateBillingModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="modal modal-blur show d-block" tabIndex={-1}>
-      <div className="modal-dialog modal-dialog-centered">
-        <div className="modal-content">
-          <div className="modal-header">
-            <h5 className="modal-title">Ativar cobrança</h5>
-            <button type="button" className="btn-close" onClick={onClose} />
+    <>
+      <div className="modal modal-blur show d-block" tabIndex={-1}>
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Ativar cobrança</h5>
+              <button type="button" className="btn-close" onClick={onClose} />
+            </div>
+            <form onSubmit={submit}>
+              <div className="modal-body">
+                {error && <div className="alert alert-danger">{error}</div>}
+                <div className="mb-3">
+                  <label className="form-label required">Usuário</label>
+                  <select
+                    className="form-select"
+                    value={form.user}
+                    onChange={(e) => setForm((f) => ({ ...f, user: e.target.value }))}
+                    required
+                  >
+                    <option value="">Selecione…</option>
+                    {candidatos.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.display_name || u.username}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="form-hint">Praças (Sd/Cb) não aparecem — não entram na relação.</div>
+                </div>
+                <div className="row">
+                  <div className="col-6 mb-3">
+                    <label className="form-label required">Dia de vencimento</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      min={1}
+                      max={31}
+                      value={form.due_day}
+                      onChange={(e) => setForm((f) => ({ ...f, due_day: Number(e.target.value) }))}
+                      required
+                    />
+                  </div>
+                  <div className="col-6 mb-3">
+                    <label className="form-label required">Mês de início</label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={form.started_period}
+                      onChange={(e) => setForm((f) => ({ ...f, started_period: e.target.value }))}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-link" onClick={onClose}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={activate.isPending}>
+                  {activate.isPending ? "Ativando…" : "Ativar"}
+                </button>
+              </div>
+            </form>
           </div>
-          <form onSubmit={submit}>
-            <div className="modal-body">
-              {error && <div className="alert alert-danger">{error}</div>}
-              <div className="mb-3">
-                <label className="form-label required">Usuário</label>
-                <select
-                  className="form-select"
-                  value={form.user}
-                  onChange={(e) => setForm((f) => ({ ...f, user: e.target.value }))}
-                  required
-                >
-                  <option value="">Selecione…</option>
-                  {candidatos.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.display_name || u.username}
-                    </option>
-                  ))}
-                </select>
-                <div className="form-hint">Praças (Sd/Cb) não aparecem — não entram na relação.</div>
-              </div>
-              <div className="row">
-                <div className="col-6 mb-3">
-                  <label className="form-label required">Dia de vencimento</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    min={1}
-                    max={31}
-                    value={form.due_day}
-                    onChange={(e) => setForm((f) => ({ ...f, due_day: Number(e.target.value) }))}
-                    required
-                  />
-                </div>
-                <div className="col-6 mb-3">
-                  <label className="form-label required">Mês de início</label>
-                  <input
-                    type="date"
-                    className="form-control"
-                    value={form.started_period}
-                    onChange={(e) => setForm((f) => ({ ...f, started_period: e.target.value }))}
-                    required
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-link" onClick={onClose}>
-                Cancelar
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={activate.isPending}>
-                {activate.isPending ? "Ativando…" : "Ativar"}
-              </button>
-            </div>
-          </form>
         </div>
       </div>
       <div className="modal-backdrop fade show" />
-    </div>
+    </>
   );
 }
 

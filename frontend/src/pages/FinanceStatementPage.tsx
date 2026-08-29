@@ -62,72 +62,74 @@ function RegisterPaymentModal({
   }
 
   return (
-    <div className="modal modal-blur show d-block" tabIndex={-1}>
-      <div className="modal-dialog modal-dialog-centered">
-        <div className="modal-content">
-          <div className="modal-header">
-            <h5 className="modal-title">Registrar pagamento</h5>
-            <button type="button" className="btn-close" onClick={onClose} />
-          </div>
-          <form onSubmit={submit}>
-            <div className="modal-body">
-              {error && <div className="alert alert-danger">{error}</div>}
-              <div className="row">
-                <div className="col-6 mb-3">
-                  <label className="form-label required">Valor</label>
+    <>
+      <div className="modal modal-blur show d-block" tabIndex={-1}>
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Registrar pagamento</h5>
+              <button type="button" className="btn-close" onClick={onClose} />
+            </div>
+            <form onSubmit={submit}>
+              <div className="modal-body">
+                {error && <div className="alert alert-danger">{error}</div>}
+                <div className="row">
+                  <div className="col-6 mb-3">
+                    <label className="form-label required">Valor</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="form-control"
+                      value={form.amount}
+                      onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="col-6 mb-3">
+                    <label className="form-label required">Forma</label>
+                    <select
+                      className="form-select"
+                      value={form.method}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, method: e.target.value as RegisterPaymentPayload["method"] }))
+                      }
+                    >
+                      <option value="dinheiro">Dinheiro</option>
+                      <option value="transferencia">Transferência</option>
+                      <option value="pix">Pix (manual)</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label required">Data do pagamento</label>
                   <input
-                    type="number"
-                    step="0.01"
+                    type="datetime-local"
                     className="form-control"
-                    value={form.amount}
-                    onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                    value={form.paid_at}
+                    onChange={(e) => setForm((f) => ({ ...f, paid_at: e.target.value }))}
                     required
                   />
                 </div>
-                <div className="col-6 mb-3">
-                  <label className="form-label required">Forma</label>
-                  <select
-                    className="form-select"
-                    value={form.method}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, method: e.target.value as RegisterPaymentPayload["method"] }))
-                    }
-                  >
-                    <option value="dinheiro">Dinheiro</option>
-                    <option value="transferencia">Transferência</option>
-                    <option value="pix">Pix (manual)</option>
-                  </select>
-                </div>
+                {meses > 0 && (
+                  <div className="alert alert-info mb-0">
+                    Esse valor cobre {meses} {meses === 1 ? "mês" : "meses"} de mensalidade.
+                  </div>
+                )}
               </div>
-              <div className="mb-3">
-                <label className="form-label required">Data do pagamento</label>
-                <input
-                  type="datetime-local"
-                  className="form-control"
-                  value={form.paid_at}
-                  onChange={(e) => setForm((f) => ({ ...f, paid_at: e.target.value }))}
-                  required
-                />
+              <div className="modal-footer">
+                <button type="button" className="btn btn-link" onClick={onClose}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={register.isPending}>
+                  {register.isPending ? "Registrando…" : "Registrar"}
+                </button>
               </div>
-              {meses > 0 && (
-                <div className="alert alert-info mb-0">
-                  Esse valor cobre {meses} {meses === 1 ? "mês" : "meses"} de mensalidade.
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-link" onClick={onClose}>
-                Cancelar
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={register.isPending}>
-                {register.isPending ? "Registrando…" : "Registrar"}
-              </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       </div>
       <div className="modal-backdrop fade show" />
-    </div>
+    </>
   );
 }
 
