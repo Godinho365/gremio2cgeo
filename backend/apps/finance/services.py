@@ -139,12 +139,36 @@ class FinanceService(BaseService):
             raise BusinessRuleError(
                 "Dia de vencimento deve ser entre 1 e 31.", code="invalid_due_day"
             )
-        if self.profiles.profile_for_user(user.pk) is not None:
+        started_period = _first_of_month(started_period)
+        existing = self.profiles.profile_for_user(user.pk)
+        if existing is not None:
+            if existing.is_active:
+                raise BusinessRuleError(
+                    "Usuário já está na relação financeira.", code="already_active"
+                )
+            existing.is_active = True
+            existing.due_day = due_day
+            existing.save(update_fields=["is_active", "due_day", "updated_at"])
+            self._ensure_window(existing)
+            existing.financial_status = self._compute_financial_status(existing)
+            existing.save(update_fields=["financial_status", "updated_at"])
+            audit.record(
+                action="finance.billing_reactivated",
+                entity_type="BillingProfile",
+                entity_id=existing.id,
+                actor_id=actor_id,
+                diff={"due_day": due_day},
+            )
+            return existing
+
+        oldest_allowed = _add_months(_first_of_month(timezone.localdate()), -60)
+        if started_period < oldest_allowed:
             raise BusinessRuleError(
-                "Usuário já está na relação financeira.", code="already_active"
+                "Mês de início não pode ser mais de 60 meses no passado.",
+                code="started_period_too_old",
             )
         profile = self.profiles.create(
-            user_id=user.pk, due_day=due_day, started_period=_first_of_month(started_period)
+            user_id=user.pk, due_day=due_day, started_period=started_period
         )
         self._ensure_window(profile)
         profile.financial_status = self._compute_financial_status(profile)
@@ -159,10 +183,14 @@ class FinanceService(BaseService):
         return profile
 
     def _extend_until(self, profile: BillingProfile, min_open: int, today: date) -> None:
-        while self.dues.open_for_profile(profile).count() < min_open:
-            latest = self.dues.latest_period(profile)
-            period = _add_months(latest, 1) if latest else profile.started_period
+        current_open = self.dues.open_for_profile(profile).count()
+        if current_open >= min_open:
+            return
+        latest = self.dues.latest_period(profile)
+        period = _add_months(latest, 1) if latest else profile.started_period
+        for _ in range(min_open - current_open):
             self._create_due(profile, period, today)
+            period = _add_months(period, 1)
 
     @transaction.atomic
     def register_payment(
@@ -188,6 +216,11 @@ class FinanceService(BaseService):
         fee = membership_fee()
         periods_covered = int(amount // fee)
         remainder = amount - (periods_covered * fee)
+        if periods_covered > 60:
+            raise BusinessRuleError(
+                "Pagamento cobre mais de 60 meses — verifique o valor informado.",
+                code="too_many_periods",
+            )
 
         payment = self.payments.create(
             provider="",
@@ -232,6 +265,8 @@ class FinanceService(BaseService):
                 reason=FinanceCreditReason.OVERPAYMENT,
                 payment=payment,
             )
+
+        settled += self._consume_credit(profile, paid_at.date())
 
         profile.last_payment_at = paid_at
         profile.financial_status = self._compute_financial_status(profile)
@@ -338,7 +373,8 @@ class FinanceService(BaseService):
     def _credit_balance(self, profile: BillingProfile) -> Decimal:
         return self.credits.balance(profile)
 
-    def _consume_credit(self, profile: BillingProfile, today: date) -> None:
+    def _consume_credit(self, profile: BillingProfile, today: date) -> list[Due]:
+        consumed: list[Due] = []
         balance = self._credit_balance(profile)
         for due in self.dues.open_for_profile(profile):
             if balance < due.amount:
@@ -354,6 +390,8 @@ class FinanceService(BaseService):
                 due=due,
             )
             balance -= due.amount
+            consumed.append(due)
+        return consumed
 
     def roll_all(self) -> int:
         """Reconciliação diária: janela, status por data, Sd/Cb, crédito acumulado."""
@@ -415,7 +453,15 @@ class FinanceService(BaseService):
             billing_profile__is_active=True, status__in=OPEN_DUE_STATUSES
         )
 
-        payments_qs = self.payments.query().filter(status=PaymentStatus.APPROVED)
+        finance_payment_ids = (
+            self.dues.query()
+            .filter(settled_by__isnull=False)
+            .values_list("settled_by_id", flat=True)
+            .distinct()
+        )
+        payments_qs = self.payments.query().filter(
+            status=PaymentStatus.APPROVED, id__in=finance_payment_ids
+        )
         if date_from:
             payments_qs = payments_qs.filter(paid_at__date__gte=date_from)
         if date_to:
@@ -423,7 +469,7 @@ class FinanceService(BaseService):
         received = payments_qs.aggregate(s=Sum("amount"))["s"] or Decimal("0.00")
 
         advance_credit = self.credits.query().filter(
-            reason=FinanceCreditReason.OVERPAYMENT
+            billing_profile__is_active=True
         ).aggregate(s=Sum("amount"))["s"] or Decimal("0.00")
 
         return {

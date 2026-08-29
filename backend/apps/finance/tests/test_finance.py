@@ -18,7 +18,9 @@ from apps.finance.models import (
     FinanceCredit,
     FinancialStatus,
 )
+from apps.finance.repositories import FinanceRepository
 from apps.finance.services import FinanceService
+from apps.payments.models import Payment, PaymentStatus
 from core.context import use_tenant
 from core.exceptions import BusinessRuleError
 
@@ -697,3 +699,170 @@ def test_finance_me_returns_own_summary_or_404(client: APIClient):
 
     client.force_authenticate(not_billed)
     assert client.get("/api/finance/me").status_code == 404
+
+
+def test_activate_billing_reactivates_previously_deactivated_profile(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro17", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        profile = FinanceService().activate_billing(
+            user=user, due_day=10, started_period=_period(0)
+        )
+        FinanceService().deactivate_billing(profile=profile)
+        reactivated = FinanceService().activate_billing(
+            user=user, due_day=15, started_period=_period(0)
+        )
+    assert reactivated.id == profile.id
+    assert reactivated.is_active is True
+    assert reactivated.due_day == 15
+
+
+def test_reactivate_billing_via_api(client: APIClient):
+    tenant, admin = _org("finapi10")
+    with use_tenant(tenant.id):
+        member = UserService().create_user(
+            username="membro_api10", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    created = client.post(
+        "/api/billing-profiles",
+        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        format="json",
+    )
+    profile_id = created.data["id"]
+    client.post(f"/api/billing-profiles/{profile_id}/desativar")
+    resp = client.post(
+        "/api/billing-profiles",
+        {"user": str(member.id), "due_day": 12, "started_period": _period_str(0)},
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    assert resp.data["id"] == profile_id
+    assert resp.data["is_active"] is True
+    assert resp.data["due_day"] == 12
+
+
+def test_dashboard_payments_received_excludes_non_finance_payments(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro18", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=user, due_day=10, started_period=_period(0))
+        FinanceService().register_payment(
+            user=user, amount=Decimal("100.00"), method="dinheiro", paid_at=_dt(0),
+        )
+        Payment.objects.create(
+            tenant_id=tenant_a.id, provider="", method="dinheiro", amount=Decimal("999.00"),
+            status=PaymentStatus.APPROVED, payer_id=user.id, paid_at=_dt(0),
+            description="Barbearia — corte", created_by_id=None,
+        )
+        data = FinanceService().dashboard()
+    assert data["payments_received"] == Decimal("100.00")
+
+
+def test_register_payment_immediately_consumes_existing_credit(tenant_a):
+    """R$140 fecha o mês corrente (100) + 40 de crédito. R$60 completa o
+    crédito em 100 — deve fechar o próximo mês NA HORA (sem rodar roll_all)."""
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro20", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        profile = FinanceService().activate_billing(
+            user=user, due_day=10, started_period=_period(0)
+        )
+        FinanceService().register_payment(
+            user=user, amount=Decimal("140.00"), method="dinheiro", paid_at=_dt(0),
+        )
+        settled_2 = FinanceService().register_payment(
+            user=user, amount=Decimal("60.00"), method="dinheiro", paid_at=_dt(0),
+        )
+        paid_periods = set(
+            Due.objects.filter(billing_profile=profile, status=DueStatus.PAID).values_list(
+                "period", flat=True
+            )
+        )
+    assert _period(1) in paid_periods
+    assert any(d.period == _period(1) for d in settled_2)
+
+
+def test_dashboard_advance_payments_received_nets_consumed_credit(tenant_a):
+    """Mesmo cenário do teste acima: depois que o crédito acumulado fecha uma
+    mensalidade, o saldo líquido de crédito (soma de todos os FinanceCredit,
+    não só OVERPAYMENT) deve cair pra zero — não continuar contando os 100
+    de OVERPAYMENT como se ainda estivessem disponíveis."""
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro19", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=user, due_day=10, started_period=_period(0))
+        FinanceService().register_payment(
+            user=user, amount=Decimal("140.00"), method="dinheiro", paid_at=_dt(0),
+        )
+        FinanceService().register_payment(
+            user=user, amount=Decimal("60.00"), method="dinheiro", paid_at=_dt(0),
+        )
+        data = FinanceService().dashboard()
+    assert data["advance_payments_received"] == Decimal("0.00")
+
+
+def test_register_payment_rejects_absurdly_large_amount(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro21", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=user, due_day=10, started_period=_period(0))
+        with pytest.raises(BusinessRuleError):
+            FinanceService().register_payment(
+                user=user, amount=Decimal("10000.00"), method="dinheiro", paid_at=_dt(0),
+            )
+
+
+def test_activate_billing_rejects_started_period_too_far_in_the_past(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro22", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        with pytest.raises(BusinessRuleError):
+            FinanceService().activate_billing(
+                user=user, due_day=10, started_period=_period(-61)
+            )
+
+
+def test_dashboard_and_billing_profiles_are_tenant_isolated(tenant_a, tenant_b):
+    with use_tenant(tenant_a.id):
+        user_a = UserService().create_user(
+            username="membroTA", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(user=user_a, due_day=10, started_period=_period(0))
+    with use_tenant(tenant_b.id):
+        data_b = FinanceService().dashboard()
+        profiles_b = list(FinanceRepository().active_profiles())
+    assert data_b["total_users"] == 0
+    assert profiles_b == []
+
+
+@pytest.mark.parametrize(
+    "days_late,expected",
+    [
+        (-6, DueStatus.PENDING),
+        (-5, DueStatus.DUE_SOON),
+        (-1, DueStatus.DUE_SOON),
+        (0, DueStatus.DUE_TODAY),
+        (1, DueStatus.OVERDUE),
+        (15, DueStatus.OVERDUE),
+        (16, DueStatus.DELINQUENT),
+    ],
+)
+def test_status_for_day_thresholds(days_late, expected):
+    today = date(2026, 6, 15)
+    due_date = today - timedelta(days=days_late)
+    assert FinanceService()._status_for(due_date, today) == expected
