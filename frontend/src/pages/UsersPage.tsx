@@ -31,7 +31,10 @@ const ROLE_HINT: Record<string, string> = {
   inventory: "Conduz os inventários periódicos.",
   user: "Solicita reservas e cautelas; vê os próprios registros.",
   auditor: "Somente leitura, para auditoria.",
+  barbershop_client: "Só marca horários na Barbearia; sem acesso ao Patrimônio.",
 };
+
+const RANKS_FORCING_BARBERSHOP_CLIENT = new Set(["Sd", "Cb"]);
 
 function apiError(err: unknown, fallback: string): string {
   const data = (
@@ -109,6 +112,10 @@ function UserFormModal({ user, onClose }: { user?: UserRef; onClose: () => void 
   const cpfBad = form.cpf.length > 0 && !cpfValid(form.cpf);
   const today = new Date().toISOString().slice(0, 10);
   const pending = create.isPending || update.isPending;
+  // Sd/Cb só têm o perfil Cliente da Barbearia — regra do backend; aqui só
+  // refletimos na tela o que vai valer ao salvar.
+  const forcedByRank = RANKS_FORCING_BARBERSHOP_CLIENT.has(form.posto_graduacao);
+  const roleValue = forcedByRank ? "barbershop_client" : form.role;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -125,7 +132,7 @@ function UserFormModal({ user, onClose }: { user?: UserRef; onClose: () => void 
       birth_date: form.birth_date || null,
       phone: form.phone.trim(),
       email: form.email.trim(),
-      role_codes: [form.role],
+      role_codes: [roleValue],
     };
     try {
       if (editing) {
@@ -287,9 +294,9 @@ function UserFormModal({ user, onClose }: { user?: UserRef; onClose: () => void 
                     <label className="form-label">Perfil</label>
                     <select
                       className="form-select"
-                      value={form.role}
+                      value={roleValue}
                       onChange={(e) => set("role", e.target.value)}
-                      disabled={isSelf}
+                      disabled={isSelf || forcedByRank}
                     >
                       {ROLES.map((r) => (
                         <option key={r.value} value={r.value}>
@@ -316,7 +323,9 @@ function UserFormModal({ user, onClose }: { user?: UserRef; onClose: () => void 
                 <div className="form-hint">
                   {isSelf
                     ? "Você não pode alterar o próprio perfil nem remover o próprio acesso."
-                    : ROLE_HINT[form.role]}
+                    : forcedByRank
+                      ? "Praças (Sd/Cb) só têm o perfil Cliente da Barbearia — não dá para escolher outro."
+                      : ROLE_HINT[roleValue]}
                 </div>
                 {editing && !user.is_active && form.is_active && (
                   <div className="alert alert-warning mt-3 mb-0 py-2">
