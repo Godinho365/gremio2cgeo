@@ -322,6 +322,10 @@ function FinanceCard() {
             </div>
           </div>
           <div className="datagrid-item">
+            <div className="datagrid-title">Mensalidade (mínimo pra pagar)</div>
+            <div className="datagrid-content">R$ {brl(data.plan_price)}</div>
+          </div>
+          <div className="datagrid-item">
             <div className="datagrid-title">Meses pagos</div>
             <div className="datagrid-content">{data.months_paid}</div>
           </div>
@@ -329,10 +333,12 @@ function FinanceCard() {
             <div className="datagrid-title">Meses em aberto</div>
             <div className="datagrid-content">{data.months_open}</div>
           </div>
-          <div className="datagrid-item">
-            <div className="datagrid-title">Valor pendente</div>
-            <div className="datagrid-content">R$ {brl(data.pending_amount)}</div>
-          </div>
+          {data.months_open > 1 && (
+            <div className="datagrid-item">
+              <div className="datagrid-title">Total em aberto (se quiser adiantar)</div>
+              <div className="datagrid-content">R$ {brl(data.pending_amount)}</div>
+            </div>
+          )}
         </div>
       </div>
       {data.months_open > 0 && (

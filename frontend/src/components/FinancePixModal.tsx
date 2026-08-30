@@ -47,7 +47,10 @@ export default function FinancePixModal({
   const [fase, setFase] = useState<"valor" | "pix">(retomando ? "pix" : "valor");
   const [pixId, setPixId] = useState<string | null>(resumo.pending_pix_payment_id);
   const precoMensal = Number(resumo.plan_price);
-  const [meses, setMeses] = useState(Math.max(1, resumo.months_open));
+  // Mínimo de 1 mês (a mensalidade atual) — não o total em aberto. Pagar
+  // vários meses de uma vez é opção de quem quiser adiantar, nunca o valor
+  // que abre a tela (achado ao vivo: parecia que o mínimo era o total).
+  const [meses, setMeses] = useState(1);
   const [copiado, setCopiado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -128,7 +131,9 @@ export default function FinancePixModal({
                     required
                   />
                   <div className="form-hint">
-                    {resumo.plan_label} — R$ {brl(precoMensal)} por mês
+                    {resumo.plan_label} — R$ {brl(precoMensal)} por mês. O mínimo é 1 mês (a
+                    mensalidade atual); pague mais de uma vez só se quiser adiantar
+                    {resumo.months_open > 1 ? ` (você tem ${resumo.months_open} meses em aberto)` : ""}.
                   </div>
                   <div className="alert alert-info mt-3 mb-0">
                     Valor do Pix: <strong>R$ {brl(valor)}</strong>
