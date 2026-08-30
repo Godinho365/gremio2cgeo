@@ -1063,3 +1063,144 @@ def test_self_subscribe_rejects_when_already_active(client: APIClient):
     client.post("/api/finance/me/assinar")
     resp = client.post("/api/finance/me/assinar")
     assert resp.status_code == 422, resp.data
+
+
+def test_initiate_pix_payment_opens_a_pending_charge(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro_pix1", password="supersecret123", email="membro_pix1@example.com",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        profile = FinanceService().activate_billing(
+            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+        )
+        payment = FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
+        profile.refresh_from_db()
+    assert payment.status == "pending"
+    assert payment.qr_code
+    assert profile.pending_payment_id == payment.id
+
+
+def test_initiate_pix_payment_rejects_when_one_is_already_open(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro_pix2", password="supersecret123", email="membro_pix2@example.com",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(
+            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+        )
+        FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
+        with pytest.raises(BusinessRuleError):
+            FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
+
+
+def test_initiate_pix_payment_rejects_when_not_in_billing(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro_pix3", password="supersecret123", email="membro_pix3@example.com",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        with pytest.raises(BusinessRuleError):
+            FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
+
+
+def test_approved_pix_payment_settles_the_open_dues(tenant_a):
+    from apps.finance.tests.conftest import FINANCE_PROVIDER_STATUS
+
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro_pix4", password="supersecret123", email="membro_pix4@example.com",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        profile = FinanceService().activate_billing(
+            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+        )
+        FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
+        FINANCE_PROVIDER_STATUS["value"] = "approved"
+        payment = FinanceService().refresh_pix_payment(user)
+        profile.refresh_from_db()
+
+    assert payment.status == "approved"
+    assert profile.pending_payment_id is None
+    paid = Due.objects.filter(billing_profile=profile, status=DueStatus.PAID)
+    assert paid.count() == 1
+    assert paid.first().settled_by_id == payment.id
+
+
+def test_expired_pix_payment_does_not_settle_and_clears_pending(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro_pix5", password="supersecret123", email="membro_pix5@example.com",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        profile = FinanceService().activate_billing(
+            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+        )
+        payment = FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
+        payment.expires_at = timezone.now() - timedelta(minutes=1)
+        payment.save(update_fields=["expires_at"])
+        atualizado = FinanceService().refresh_pix_payment(user)
+        profile.refresh_from_db()
+
+    assert atualizado.status == "expired"
+    assert profile.pending_payment_id is None
+    assert Due.objects.filter(billing_profile=profile, status=DueStatus.PAID).count() == 0
+
+
+def test_settle_finance_payment_for_ignores_non_finance_payments(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro_pix6", password="supersecret123", email="membro_pix6@example.com",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        payment = Payment.objects.create(
+            tenant_id=tenant_a.id, provider="", method="pix", amount=Decimal("15.00"),
+            status=PaymentStatus.APPROVED, payer_id=user.id, description="Barbearia — corte",
+        )
+        settled = FinanceService().settle_finance_payment_for(payment)
+    assert settled == []
+
+
+def test_initiate_pix_payment_via_api_requires_email(client: APIClient):
+    tenant, admin = _org("finapi16")
+    with use_tenant(tenant.id):
+        sememail = UserService().create_user(
+            username="sememail", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    client.post(
+        "/api/billing-profiles",
+        {"user": str(sememail.id), "plan": "associado", "due_day": 10,
+         "started_period": _period_str(0)},
+        format="json",
+    )
+    client.force_authenticate(sememail)
+    resp = client.post("/api/finance/me/pagar", {"amount": "100.00"}, format="json")
+    assert resp.status_code == 422, resp.data
+    assert resp.data["error"]["code"] == "payer_email_required"
+
+
+def test_initiate_and_check_pix_payment_via_api(client: APIClient):
+    tenant, admin = _org("finapi17")
+    with use_tenant(tenant.id):
+        user = UserService().create_user(
+            username="membro_pixapi", password="supersecret123",
+            email="membro_pixapi@example.com", posto_graduacao="Cel", tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    client.post(
+        "/api/billing-profiles",
+        {"user": str(user.id), "plan": "associado", "due_day": 10,
+         "started_period": _period_str(0)},
+        format="json",
+    )
+    client.force_authenticate(user)
+    resp = client.post("/api/finance/me/pagar", {"amount": "100.00"}, format="json")
+    assert resp.status_code == 201, resp.data
+    assert resp.data["status"] == "pending"
+
+    status_resp = client.get("/api/finance/me/pagamento")
+    assert status_resp.status_code == 200, status_resp.data
+    assert status_resp.data["status"] == "pending"

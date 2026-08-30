@@ -15,6 +15,8 @@ from apps.accounts.models import RoleCode
 from core.exceptions import BusinessRuleError
 from core.viewsets import TenantContextAPIView, TenantScopedViewSet
 
+from apps.payments.api.serializers import PaymentSerializer
+
 from ..models import BillingProfile, Due, PlanCode
 from ..services import FinanceService
 from .serializers import (
@@ -23,6 +25,7 @@ from .serializers import (
     BillingProfileSerializer,
     DueSerializer,
     GenerateInviteSerializer,
+    InitiatePixPaymentSerializer,
     RegisterPaymentSerializer,
     UpdateDueDaySerializer,
 )
@@ -221,3 +224,34 @@ class SelfSubscribeView(TenantContextAPIView):
             actor_id=str(request.user.pk),
         )
         return Response(BillingProfileSerializer(profile).data, status=201)
+
+
+class InitiatePixPaymentView(TenantContextAPIView):
+    """Autoatendimento: o próprio usuário abre um Pix pra pagar a mensalidade."""
+
+    permission_classes = [IsAuthenticated]
+    service = FinanceService()
+
+    def post(self, request: Request) -> Response:
+        payload = InitiatePixPaymentSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        payment = self.service.initiate_pix_payment(
+            user=request.user,
+            amount=payload.validated_data["amount"],
+            actor_id=str(request.user.pk),
+        )
+        return Response(PaymentSerializer(payment).data, status=201)
+
+
+class FinancePixStatusView(TenantContextAPIView):
+    """Reconsulta o Pix da mensalidade — a tela do QR usa isto pra confirmar
+    sozinha, sem depender só do webhook."""
+
+    permission_classes = [IsAuthenticated]
+    service = FinanceService()
+
+    def get(self, request: Request) -> Response:
+        payment = self.service.refresh_pix_payment(request.user)
+        if payment is None:
+            return Response(status=404)
+        return Response(PaymentSerializer(payment).data)

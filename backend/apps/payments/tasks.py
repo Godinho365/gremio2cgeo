@@ -13,6 +13,7 @@ import logging
 from celery import shared_task
 
 from apps.barbershop.services import BarbershopService
+from apps.finance.services import FinanceService
 from core.context import use_tenant
 
 from .models import OPEN_PAYMENT_STATUSES, Payment
@@ -31,6 +32,7 @@ def sync_pending_payments() -> int:
     """
     pagamentos = PaymentService()
     barbearia = BarbershopService(payments=pagamentos)
+    financeiro = FinanceService()
     tratadas = 0
 
     pendentes = Payment.objects.filter(status__in=OPEN_PAYMENT_STATUSES).order_by("created_at")
@@ -39,6 +41,7 @@ def sync_pending_payments() -> int:
             with use_tenant(payment.tenant_id):
                 atualizado = pagamentos.sync(payment)
                 barbearia.settle_appointment_for(atualizado)
+                financeiro.settle_finance_payment_for(atualizado)
             tratadas += 1
         except Exception:  # noqa: BLE001 - um pagamento ruim não pode parar a fila
             logger.exception("Falha ao sincronizar o pagamento %s", payment.pk)

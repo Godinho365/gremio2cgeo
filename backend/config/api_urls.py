@@ -24,6 +24,8 @@ from apps.finance.api.views import (
     BillingProfileViewSet,
     DueViewSet,
     FinanceDashboardView,
+    FinancePixStatusView,
+    InitiatePixPaymentView,
     MyFinanceView,
     SelfSubscribeView,
 )
@@ -64,6 +66,8 @@ urlpatterns = [
     path("finance/dashboard", FinanceDashboardView.as_view(), name="finance_dashboard"),
     path("finance/me", MyFinanceView.as_view(), name="finance_me"),
     path("finance/me/assinar", SelfSubscribeView.as_view(), name="finance_self_subscribe"),
+    path("finance/me/pagar", InitiatePixPaymentView.as_view(), name="finance_initiate_pix"),
+    path("finance/me/pagamento", FinancePixStatusView.as_view(), name="finance_pix_status"),
     path(
         "finance/convites-associado",
         AssociadoInviteListCreateView.as_view(),

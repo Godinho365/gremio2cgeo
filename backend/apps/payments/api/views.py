@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 
 from apps.barbershop.models import walk_in_price
 from apps.barbershop.services import BarbershopService
+from apps.finance.services import FinanceService
 from core.viewsets import TenantContextAPIView
 
 from ..credits import CreditService
@@ -51,6 +52,7 @@ class MercadoPagoWebhookView(APIView):
         payment = PaymentService().apply_provider_status(data_id)
         if payment is not None:
             BarbershopService().settle_appointment_for(payment)
+            FinanceService().settle_finance_payment_for(payment)
         return Response(status=200)
 
 

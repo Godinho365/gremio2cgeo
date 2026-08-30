@@ -114,3 +114,12 @@ class RegisterPaymentSerializer(serializers.Serializer):
         if value <= 0:
             raise serializers.ValidationError("O valor deve ser maior que zero.")
         return value
+
+
+class InitiatePixPaymentSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("O valor deve ser maior que zero.")
+        return value

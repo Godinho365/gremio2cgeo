@@ -13,9 +13,11 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from apps.accounts.models import User
-from apps.payments.models import PaymentStatus
+from apps.payments.models import Payment, PaymentStatus
 from apps.payments.repositories import PaymentRepository
+from apps.payments.services import PaymentService
 from core import audit
+from core.context import use_tenant
 from core.exceptions import BusinessRuleError
 from core.services import BaseService
 
@@ -67,12 +69,14 @@ class FinanceService(BaseService):
         payments: PaymentRepository | None = None,
         credits: FinanceCreditRepository | None = None,
         invites: AssociadoInviteRepository | None = None,
+        payment_gateway: PaymentService | None = None,
     ) -> None:
         self.profiles = profiles or FinanceRepository()
         self.dues = dues or DueRepository()
         self.payments = payments or PaymentRepository()
         self.invites = invites or AssociadoInviteRepository()
         self.credits = credits or FinanceCreditRepository()
+        self.payment_gateway = payment_gateway or PaymentService()
 
     def _assert_eligible(self, user: User, plan: str) -> None:
         if plan not in eligible_plans_for(user.posto_graduacao):
@@ -260,27 +264,21 @@ class FinanceService(BaseService):
             self._create_due(profile, period, today)
             period = _add_months(period, 1)
 
-    @transaction.atomic
-    def register_payment(
+    def _allocate_payment(
         self,
         *,
-        user: User,
+        profile: BillingProfile,
+        payment: Payment,
         amount: Decimal,
-        method: str,
         paid_at: datetime,
         actor_id: str | None = None,
     ) -> list[Due]:
-        amount = Decimal(str(amount))
-        if amount <= 0:
-            raise BusinessRuleError(
-                "Valor do pagamento deve ser maior que zero.", code="invalid_amount"
-            )
-        profile = self.profiles.profile_for_user(user.pk)
-        if profile is None or not profile.is_active:
-            raise BusinessRuleError(
-                "Usuário não está na relação financeira.", code="not_in_billing"
-            )
+        """Aplica um pagamento já confirmado às mensalidades em aberto.
 
+        Comum ao lançamento manual do admin (já nasce aprovado) e à
+        confirmação de um Pix de autoatendimento (só chega aqui depois que o
+        provedor confirma — nunca antes).
+        """
         fee = plan_price(profile.plan)
         periods_covered = int(amount // fee)
         remainder = amount - (periods_covered * fee)
@@ -289,17 +287,6 @@ class FinanceService(BaseService):
                 "Pagamento cobre mais de 60 meses — verifique o valor informado.",
                 code="too_many_periods",
             )
-
-        payment = self.payments.create(
-            provider="",
-            method=method,
-            amount=amount,
-            status=PaymentStatus.APPROVED,
-            payer_id=user.pk,
-            paid_at=paid_at,
-            description="Mensalidade",
-            created_by_id=actor_id,
-        )
 
         settled: list[Due] = []
         if periods_covered > 0:
@@ -345,9 +332,115 @@ class FinanceService(BaseService):
             entity_type="BillingProfile",
             entity_id=profile.id,
             actor_id=actor_id,
-            diff={"amount": str(amount), "method": method, "periods": periods_covered},
+            diff={"amount": str(amount), "method": payment.method, "periods": periods_covered},
         )
         return settled
+
+    @transaction.atomic
+    def register_payment(
+        self,
+        *,
+        user: User,
+        amount: Decimal,
+        method: str,
+        paid_at: datetime,
+        actor_id: str | None = None,
+    ) -> list[Due]:
+        """Lançamento manual do admin — já chega aprovado (dinheiro/transferência
+        em mãos, ou Pix conferido por fora)."""
+        amount = Decimal(str(amount))
+        if amount <= 0:
+            raise BusinessRuleError(
+                "Valor do pagamento deve ser maior que zero.", code="invalid_amount"
+            )
+        profile = self.profiles.profile_for_user(user.pk)
+        if profile is None or not profile.is_active:
+            raise BusinessRuleError(
+                "Usuário não está na relação financeira.", code="not_in_billing"
+            )
+
+        payment = self.payments.create(
+            provider="",
+            method=method,
+            amount=amount,
+            status=PaymentStatus.APPROVED,
+            payer_id=user.pk,
+            paid_at=paid_at,
+            description="Mensalidade",
+            created_by_id=actor_id,
+        )
+        return self._allocate_payment(
+            profile=profile, payment=payment, amount=amount, paid_at=paid_at, actor_id=actor_id
+        )
+
+    @transaction.atomic
+    def initiate_pix_payment(
+        self, *, user: User, amount: Decimal, actor_id: str | None = None
+    ) -> Payment:
+        """Autoatendimento: o próprio usuário abre um Pix pra mensalidade.
+
+        Não aloca nada ainda — só quando o provedor confirmar (RN-P2), via
+        `settle_finance_payment_for` (webhook ou tarefa periódica).
+        """
+        amount = Decimal(str(amount))
+        if amount <= 0:
+            raise BusinessRuleError(
+                "Valor do pagamento deve ser maior que zero.", code="invalid_amount"
+            )
+        profile = self.profiles.profile_for_user(user.pk)
+        if profile is None or not profile.is_active:
+            raise BusinessRuleError(
+                "Usuário não está na relação financeira.", code="not_in_billing"
+            )
+        if profile.pending_payment_id and profile.pending_payment.status == PaymentStatus.PENDING:
+            raise BusinessRuleError(
+                "Já existe um Pix em aberto para sua mensalidade.", code="pix_already_pending"
+            )
+
+        payment = self.payment_gateway.open_pix_charge(
+            amount=amount, description="Mensalidade", payer=user
+        )
+        profile.pending_payment = payment
+        profile.save(update_fields=["pending_payment", "updated_at"])
+        return payment
+
+    def refresh_pix_payment(self, user: User) -> Payment | None:
+        """Reconsulta o Pix da mensalidade no provedor — tela do QR usa isto
+        pra não depender só do webhook/tarefa de fundo."""
+        profile = self.profiles.profile_for_user(user.pk)
+        if profile is None or profile.pending_payment_id is None:
+            return None
+        payment = self.payment_gateway.sync(profile.pending_payment)
+        self.settle_finance_payment_for(payment)
+        payment.refresh_from_db()
+        return payment
+
+    def settle_finance_payment_for(self, payment: Payment) -> list[Due]:
+        """Chamado pelo webhook/tarefa: aplica a situação da cobrança no
+        Financeiro, se ela for de uma mensalidade em aberto."""
+        with use_tenant(payment.tenant_id):
+            return self._settle_finance_payment(payment)
+
+    @transaction.atomic
+    def _settle_finance_payment(self, payment: Payment) -> list[Due]:
+        profile = self.profiles.query().filter(pending_payment_id=payment.pk).first()
+        if profile is None:
+            return []
+        if payment.status == PaymentStatus.PENDING:
+            return []  # ainda não resolveu — nada a fazer por enquanto
+
+        profile.pending_payment = None
+        profile.save(update_fields=["pending_payment", "updated_at"])
+        if payment.status != PaymentStatus.APPROVED:
+            return []  # expirou/recusou/cancelou — o usuário tenta de novo
+
+        return self._allocate_payment(
+            profile=profile,
+            payment=payment,
+            amount=payment.amount,
+            paid_at=payment.paid_at or timezone.now(),
+            actor_id=str(payment.payer_id),
+        )
 
     @transaction.atomic
     def cancel_payment(self, *, due_id: str, actor_id: str | None = None) -> list[Due]:

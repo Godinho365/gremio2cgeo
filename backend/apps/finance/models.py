@@ -79,6 +79,11 @@ class BillingProfile(TenantScopedModel):
         max_length=20, choices=FinancialStatus.choices, default=FinancialStatus.UP_TO_DATE
     )
     last_payment_at = models.DateTimeField(null=True, blank=True)
+    # Pix de autoatendimento em aberto — quem confirma é sempre o provedor
+    # (webhook/tarefa periódica), nunca o clique do usuário (RN-P2).
+    pending_payment = models.ForeignKey(
+        Payment, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
 
     class Meta:
         db_table = "billing_profile"
