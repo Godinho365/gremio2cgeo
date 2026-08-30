@@ -184,6 +184,7 @@ export default function FinanceStatementPage() {
                   if (confirm(`Reativar a cobrança de ${profile.user_name}?`))
                     activate.mutate({
                       user: profile.user,
+                      plan: profile.plan,
                       due_day: profile.due_day,
                       started_period: profile.started_period,
                     });

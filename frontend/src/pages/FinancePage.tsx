@@ -4,12 +4,17 @@ import { Link } from "react-router-dom";
 
 import { brl } from "../features/barbershop/api";
 import {
+  eligiblePlansFor,
   FINANCIAL_STATUS_BADGE,
   FINANCIAL_STATUS_LABEL,
+  PLAN_LABEL,
   useActivateBilling,
   useBillingProfiles,
   useFinanceDashboard,
+  useGenerateInvite,
+  usePendingInvites,
   type BillingProfile,
+  type PlanCode,
 } from "../features/finance/api";
 import { useUsers } from "../features/accounts/api";
 import { useAuth } from "../auth/AuthContext";
@@ -33,21 +38,27 @@ function ActivateBillingModal({ onClose }: { onClose: () => void }) {
   const { data: profiles } = useBillingProfiles();
   const activate = useActivateBilling();
   const today = new Date().toISOString().slice(0, 10);
-  const [form, setForm] = useState({ user: "", due_day: 10, started_period: today.slice(0, 8) + "01" });
+  const [form, setForm] = useState({
+    user: "",
+    plan: "" as PlanCode | "",
+    due_day: 10,
+    started_period: today.slice(0, 8) + "01",
+  });
   const [error, setError] = useState<string | null>(null);
 
   // Quem já está na relação (ativa ou não) não aparece de novo — reativar
   // exige editar o cadastro existente, não criar um segundo.
   const billedIds = new Set((profiles ?? []).map((p) => p.user));
   const candidatos = (users ?? []).filter(
-    (u) => u.posto_graduacao !== "Sd" && u.posto_graduacao !== "Cb" && !billedIds.has(u.id),
+    (u) => eligiblePlansFor(u.posto_graduacao).length > 0 && !billedIds.has(u.id),
   );
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!form.plan) return;
     try {
-      await activate.mutateAsync(form);
+      await activate.mutateAsync({ ...form, plan: form.plan });
       onClose();
     } catch (err) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } }).response?.data
@@ -83,8 +94,28 @@ function ActivateBillingModal({ onClose }: { onClose: () => void }) {
                       </option>
                     ))}
                   </select>
-                  <div className="form-hint">Praças (Sd/Cb) não aparecem — não entram na relação.</div>
+                  <div className="form-hint">Só aparecem usuários com posto elegível a algum plano.</div>
                 </div>
+                {form.user && (
+                  <div className="mb-3">
+                    <label className="form-label required">Plano</label>
+                    <select
+                      className="form-select"
+                      value={form.plan}
+                      onChange={(e) => setForm((f) => ({ ...f, plan: e.target.value as PlanCode }))}
+                      required
+                    >
+                      <option value="">Selecione…</option>
+                      {eligiblePlansFor(
+                        candidatos.find((u) => u.id === form.user)?.posto_graduacao ?? "",
+                      ).map((code) => (
+                        <option key={code} value={code}>
+                          {PLAN_LABEL[code]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="row">
                   <div className="col-6 mb-3">
                     <label className="form-label required">Dia de vencimento</label>
@@ -114,7 +145,7 @@ function ActivateBillingModal({ onClose }: { onClose: () => void }) {
                 <button type="button" className="btn btn-link" onClick={onClose}>
                   Cancelar
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={activate.isPending}>
+                <button type="submit" className="btn btn-primary" disabled={activate.isPending || !form.plan}>
                   {activate.isPending ? "Ativando…" : "Ativar"}
                 </button>
               </div>
@@ -176,6 +207,7 @@ export default function FinancePage() {
               <tr>
                 <th>Usuário</th>
                 <th>Posto/Grad.</th>
+                <th>Plano</th>
                 <th>Situação</th>
                 <th>Vencimento</th>
                 <th className="w-1" />
@@ -184,12 +216,12 @@ export default function FinancePage() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={5} className="text-secondary">Carregando…</td>
+                  <td colSpan={6} className="text-secondary">Carregando…</td>
                 </tr>
               )}
               {!isLoading && (profiles ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-secondary text-center py-4">
+                  <td colSpan={6} className="text-secondary text-center py-4">
                     Nenhum usuário na relação financeira ainda.
                   </td>
                 </tr>
@@ -198,6 +230,7 @@ export default function FinancePage() {
                 <tr key={p.id}>
                   <td>{p.user_name}</td>
                   <td>{p.user_posto || "—"}</td>
+                  <td>{p.plan_label}</td>
                   <td>
                     <span className={`badge ${FINANCIAL_STATUS_BADGE[p.financial_status]}`}>
                       {FINANCIAL_STATUS_LABEL[p.financial_status]}
@@ -217,7 +250,78 @@ export default function FinancePage() {
         </div>
       </div>
 
+      {canManage && <AssociadoInvites />}
+
       {activating && <ActivateBillingModal onClose={() => setActivating(false)} />}
     </>
+  );
+}
+
+function AssociadoInvites() {
+  const { data: invites } = usePendingInvites();
+  const { data: users } = useUsers();
+  const { data: profiles } = useBillingProfiles();
+  const generate = useGenerateInvite();
+  const [link, setLink] = useState<string | null>(null);
+
+  const billedIds = new Set((profiles ?? []).map((p) => p.user));
+  const invitedIds = new Set((invites ?? []).filter((i) => !i.used_at).map((i) => i.user));
+  const candidatos = (users ?? []).filter(
+    (u) =>
+      eligiblePlansFor(u.posto_graduacao).length === 2 &&
+      !billedIds.has(u.id) &&
+      !invitedIds.has(u.id),
+  );
+
+  return (
+    <div className="card mt-3">
+      <div className="card-header">
+        <h3 className="card-title">Convite para o Associado</h3>
+      </div>
+      <div className="card-body">
+        {link && (
+          <div className="alert alert-success">
+            Link gerado: <code>{link}</code>
+          </div>
+        )}
+        <p className="text-secondary">
+          Cabos e Soldados EP podem escolher entre Associado e Mensalista
+          Barbearia. Gere um convite pra deixar a pessoa escolher ela mesma.
+        </p>
+        <select
+          className="form-select mb-2"
+          defaultValue=""
+          onChange={async (e) => {
+            if (!e.target.value) return;
+            const invite = await generate.mutateAsync(e.target.value);
+            setLink(`${window.location.origin}/convite/associado/${invite.token}`);
+            e.target.value = "";
+          }}
+        >
+          <option value="">Gerar convite para…</option>
+          {candidatos.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.display_name || u.username}
+            </option>
+          ))}
+        </select>
+        {(invites ?? []).filter((i) => !i.used_at).length > 0 && (
+          <table className="table table-sm mt-2">
+            <tbody>
+              {(invites ?? [])
+                .filter((i) => !i.used_at)
+                .map((i) => (
+                  <tr key={i.id}>
+                    <td>{i.user_name}</td>
+                    <td className="text-secondary small">
+                      expira {new Date(i.expires_at).toLocaleDateString("pt-BR")}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
   );
 }

@@ -29,11 +29,33 @@ export const FINANCIAL_STATUS_BADGE: Record<FinancialStatus, string> = {
   delinquent: "bg-red-lt",
 };
 
+export type PlanCode = "associado" | "barbearia";
+
+export const PLAN_LABEL: Record<PlanCode, string> = {
+  associado: "Associado",
+  barbearia: "Mensalista Barbearia",
+};
+
+const _BARBEARIA_ONLY: readonly string[] = ["Sd EV"];
+const _BOTH_PLANS: readonly string[] = ["Sd EP", "Cb"];
+const _UNCLASSIFIED: readonly string[] = ["Sd", ""];
+
+/** Espelha `eligible_plans_for` do backend — só pra filtrar a UI; a regra
+ * de verdade é sempre validada no servidor. */
+export function eligiblePlansFor(posto: string): PlanCode[] {
+  if (_UNCLASSIFIED.includes(posto)) return [];
+  if (_BARBEARIA_ONLY.includes(posto)) return ["barbearia"];
+  if (_BOTH_PLANS.includes(posto)) return ["associado", "barbearia"];
+  return ["associado"];
+}
+
 export interface BillingProfile {
   id: string;
   user: string;
   user_name: string;
   user_posto: string;
+  plan: PlanCode;
+  plan_label: string;
   due_day: number;
   started_period: string;
   is_active: boolean;
@@ -79,6 +101,7 @@ export function useBillingProfiles() {
 
 export interface ActivateBillingPayload {
   user: string;
+  plan: PlanCode;
   due_day: number;
   started_period: string;
 }
@@ -88,6 +111,50 @@ export function useActivateBilling() {
   return useMutation({
     mutationFn: async (payload: ActivateBillingPayload) =>
       (await api.post<BillingProfile>("/billing-profiles", payload)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["finance"] }),
+  });
+}
+
+export interface AssociadoInvite {
+  id: string;
+  user: string;
+  user_name: string;
+  token: string;
+  expires_at: string;
+  used_at: string | null;
+  created_at: string;
+}
+
+export function usePendingInvites() {
+  return useQuery({
+    queryKey: ["finance", "invites"],
+    queryFn: async () =>
+      (await api.get<AssociadoInvite[]>("/finance/convites-associado")).data,
+  });
+}
+
+export function useGenerateInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (userId: string) =>
+      (await api.post<AssociadoInvite>("/finance/convites-associado", { user: userId })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["finance", "invites"] }),
+  });
+}
+
+export function useAcceptAssociadoInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (token: string) =>
+      (await api.post<BillingProfile>(`/finance/convites-associado/${token}/aceitar`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["finance"] }),
+  });
+}
+
+export function useSelfSubscribe() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await api.post<BillingProfile>("/finance/me/assinar")).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["finance"] }),
   });
 }
@@ -176,6 +243,8 @@ export function useFinanceDashboard() {
 
 export interface MyFinanceSummary {
   financial_status: FinancialStatus;
+  plan: PlanCode;
+  plan_label: string;
   due_day: number;
   next_due_date: string | null;
   days_until_due: number | null;
@@ -188,7 +257,7 @@ export interface MyFinanceSummary {
   paid_through_period: string | null;
 }
 
-/** 404 = usuário não está na relação financeira (Sd/Cb ou nunca ativado). */
+/** 404 = usuário não está na relação financeira (sem plano ativado ainda). */
 export function useMyFinance() {
   return useQuery({
     queryKey: ["finance", "me"],
