@@ -34,7 +34,7 @@ const ROLE_HINT: Record<string, string> = {
   barbershop_client: "Só marca horários na Barbearia; sem acesso ao Patrimônio.",
 };
 
-const RANKS_FORCING_BARBERSHOP_CLIENT = new Set(["Sd", "Cb"]);
+const RANKS_FORCING_BARBERSHOP_CLIENT = new Set(["Sd EP", "Sd EV", "Cb"]);
 
 function apiError(err: unknown, fallback: string): string {
   const data = (
@@ -469,9 +469,12 @@ export default function UsersPage() {
     is_active: active || undefined,
     page,
   });
-  const rows = data?.results ?? [];
+  const [somentePendentes, setSomentePendentes] = useState(false);
+  const rows = (data?.results ?? []).filter(
+    (u) => !somentePendentes || u.posto_graduacao === "Sd",
+  );
   const count = data?.count ?? 0;
-  const hasFilter = !!q || !!role || !!active;
+  const hasFilter = !!q || !!role || !!active || somentePendentes;
 
   async function removeUser(u: UserRef) {
     if (!confirm(`Excluir o cadastro de ${u.display_name}?`)) return;
@@ -550,6 +553,17 @@ export default function UsersPage() {
                 <option value="false">Sem acesso</option>
               </select>
             </div>
+            <div className="col-auto">
+              <label className="form-check form-switch m-0">
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  checked={somentePendentes}
+                  onChange={(e) => setSomentePendentes(e.target.checked)}
+                />
+                <span className="form-check-label">Só pendentes de reclassificação</span>
+              </label>
+            </div>
             {hasFilter && (
               <div className="col-auto">
                 <button
@@ -559,6 +573,7 @@ export default function UsersPage() {
                     setQ("");
                     setRole("");
                     setActive("");
+                    setSomentePendentes(false);
                   }}
                 >
                   Limpar
@@ -604,7 +619,17 @@ export default function UsersPage() {
                   .toUpperCase();
                 return (
                   <tr key={u.id}>
-                    <td>{u.posto_graduacao || "—"}</td>
+                    <td>
+                      {u.posto_graduacao || "—"}
+                      {u.posto_graduacao === "Sd" && (
+                        <span
+                          className="badge bg-yellow-lt ms-1"
+                          title="Posto desatualizado — precisa virar Sd EP ou Sd EV"
+                        >
+                          pendente
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <div className="d-flex align-items-center">
                         <span className="avatar avatar-sm me-2 bg-primary-lt">{initials}</span>
