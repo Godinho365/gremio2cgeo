@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
 from rest_framework.exceptions import MethodNotAllowed
@@ -256,8 +255,9 @@ class SelfSubscribeView(TenantContextAPIView):
     conforme o que o posto permitir.
 
     A elegibilidade (`_assert_eligible` dentro de `activate_billing`) já
-    recusa sozinha quem não pode assinar o plano escolhido — não precisa
-    duplicar a checagem aqui.
+    recusa sozinha quem não pode assinar o plano escolhido, e
+    `FinanceService.self_subscribe` barra Cb/Sd EP tentando pular o
+    convite pro Associado Full — não precisa duplicar nada aqui.
     """
 
     permission_classes = [IsAuthenticated]
@@ -267,14 +267,7 @@ class SelfSubscribeView(TenantContextAPIView):
         plan = request.data.get("plan")
         if plan not in PlanCode.values:
             raise BusinessRuleError("Escolha um plano válido.", code="invalid_plan")
-        today = timezone.localdate()
-        profile = self.service.activate_billing(
-            user=request.user,
-            plan=plan,
-            due_day=today.day,
-            started_period=today.replace(day=1),
-            actor_id=str(request.user.pk),
-        )
+        profile = self.service.self_subscribe(user=request.user, plan=plan)
         return Response(BillingProfileSerializer(profile).data, status=201)
 
 

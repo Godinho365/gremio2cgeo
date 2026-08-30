@@ -50,6 +50,16 @@ export function eligiblePlansFor(posto: string): PlanCode[] {
   return ["associado"];
 }
 
+/** Mesmos planos de `eligiblePlansFor`, exceto o Associado Full pra Cb/Sd EP
+ * — eles precisam de convite (do administrador ou de outro Associado Full em
+ * dia) pra esse plano específico; `FinanceService.self_subscribe` recusa a
+ * ativação direta no servidor. Só usado pra decidir os botões de
+ * autoatendimento no perfil. */
+export function selfServicePlansFor(posto: string): PlanCode[] {
+  if (_BOTH_PLANS.includes(posto)) return ["barbearia"];
+  return eligiblePlansFor(posto);
+}
+
 export interface BillingProfile {
   id: string;
   user: string;

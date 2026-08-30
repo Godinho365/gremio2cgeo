@@ -12,7 +12,7 @@ from django.db import transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
 
-from apps.accounts.models import User
+from apps.accounts.models import BARBERSHOP_ONLY_RANKS, User
 from apps.accounts.repositories import UserRepository
 from apps.accounts.services import UserService
 from apps.payments.models import Payment, PaymentStatus
@@ -212,6 +212,27 @@ class FinanceService(BaseService):
             diff={"plan": plan, "due_day": due_day, "started_period": str(profile.started_period)},
         )
         return profile
+
+    def self_subscribe(self, *, user: User, plan: str) -> BillingProfile:
+        """Autoatendimento (perfil, sem admin) — igual a activate_billing,
+        exceto que Cb/Sd EP não conseguem ativar o Associado Full sozinhos:
+        precisam de convite (do administrador ou de outro Associado Full em
+        dia). A Assinatura Barbearia continua liberada pra eles sem convite.
+        """
+        if plan == PlanCode.ASSOCIADO and user.posto_graduacao in BARBERSHOP_ONLY_RANKS:
+            raise BusinessRuleError(
+                "Associado Full pra Cb/Sd EP exige convite — peça pro "
+                "administrador ou pra um Associado Full em dia.",
+                code="invite_required",
+            )
+        today = timezone.localdate()
+        return self.activate_billing(
+            user=user,
+            plan=plan,
+            due_day=today.day,
+            started_period=today.replace(day=1),
+            actor_id=str(user.pk),
+        )
 
     def generate_associado_invite(
         self, *, user: User, actor_id: str | None = None

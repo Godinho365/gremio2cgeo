@@ -1210,8 +1210,8 @@ def test_self_subscribe_activates_barbearia_plan_for_eligible_user(client: APICl
 
 
 def test_self_subscribe_activates_associado_full_without_admin_or_invite(client: APIClient):
-    """Não depende do admin ativar nem de convite — qualquer posto elegível
-    ao Associado Full ativa sozinho pelo próprio perfil."""
+    """Não depende do admin ativar nem de convite — postos fora do Cb/Sd EP
+    ativam o Associado Full sozinhos pelo próprio perfil."""
     tenant, admin = _org("finapi13b")
     with use_tenant(tenant.id):
         coronel = UserService().create_user(
@@ -1225,19 +1225,37 @@ def test_self_subscribe_activates_associado_full_without_admin_or_invite(client:
     assert resp.data["is_active"] is True
 
 
-def test_self_subscribe_cb_can_choose_associado_full(client: APIClient):
-    """Cb/Sd EP escolhem entre os dois planos — não fica travado na
-    Assinatura Barbearia (que era o único plano suportado antes)."""
+def test_self_subscribe_cb_cannot_skip_the_invite_for_associado_full(client: APIClient):
+    """Cb/Sd EP não ativam o Associado Full sozinhos — precisam de convite
+    (do administrador ou de outro Associado Full em dia). A Assinatura
+    Barbearia continua liberada sem convite."""
     tenant, admin = _org("finapi13c")
     with use_tenant(tenant.id):
         cabo = UserService().create_user(
-            username="cabo_auto_full", password="supersecret123",
+            username="cabo_sem_convite_auto", password="supersecret123",
             posto_graduacao="Cb", tenant_id=tenant.id,
         )
     client.force_authenticate(cabo)
     resp = client.post("/api/finance/me/assinar", {"plan": "associado"}, format="json")
+    assert resp.status_code == 422, resp.data
+    assert resp.data["error"]["code"] == "invite_required"
+
+    resp = client.post("/api/finance/me/assinar", {"plan": "barbearia"}, format="json")
     assert resp.status_code == 201, resp.data
-    assert resp.data["plan"] == "associado"
+    assert resp.data["plan"] == "barbearia"
+
+
+def test_self_subscribe_sd_ep_cannot_skip_the_invite_for_associado_full(client: APIClient):
+    tenant, admin = _org("finapi13d")
+    with use_tenant(tenant.id):
+        soldado_ep = UserService().create_user(
+            username="sdep_sem_convite_auto", password="supersecret123",
+            posto_graduacao="Sd EP", tenant_id=tenant.id,
+        )
+    client.force_authenticate(soldado_ep)
+    resp = client.post("/api/finance/me/assinar", {"plan": "associado"}, format="json")
+    assert resp.status_code == 422, resp.data
+    assert resp.data["error"]["code"] == "invite_required"
 
 
 def test_self_subscribe_rejects_ineligible_rank(client: APIClient):

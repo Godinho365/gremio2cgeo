@@ -12,10 +12,10 @@ import {
 } from "../features/accounts/api";
 import { brl, useCredits } from "../features/barbershop/api";
 import {
-  eligiblePlansFor,
   FINANCIAL_STATUS_BADGE,
   FINANCIAL_STATUS_LABEL,
   PLAN_LABEL,
+  selfServicePlansFor,
   useGenerateInvite,
   useInviteCandidates,
   useMyFinance,
@@ -374,7 +374,10 @@ function NoPlanCard() {
     );
   }
 
-  const planos = eligiblePlansFor(posto);
+  // Cb/Sd EP: o Associado Full fica de fora daqui — pra eles esse plano só
+  // vem por convite (ver selfServicePlansFor). A Assinatura Barbearia
+  // continua livre pra autoatendimento.
+  const planos = selfServicePlansFor(posto);
 
   async function assinar(plan: PlanCode) {
     setError(null);
