@@ -16,6 +16,7 @@ import {
 import Layout from "./components/Layout";
 import AgendaPage from "./pages/AgendaPage";
 import AssetsPage from "./pages/AssetsPage";
+import AssociadoInvitePage from "./pages/AssociadoInvitePage";
 import BarbershopAgendaPage from "./pages/BarbershopAgendaPage";
 import BarbershopPage from "./pages/BarbershopPage";
 import BarbersPage from "./pages/BarbersPage";
@@ -49,6 +50,7 @@ export default function App() {
         <Route element={<RequireRole roles={MODULE_CHOOSER_ROLES} />}>
           <Route path="/modulos" element={<ModulesPage />} />
         </Route>
+        <Route path="/convite/associado/:token" element={<AssociadoInvitePage />} />
         <Route element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route element={<RequireRole roles={STAFF_ROLES} />}>
