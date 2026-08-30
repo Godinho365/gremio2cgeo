@@ -8,7 +8,7 @@ from apps.accounts.models import User
 from apps.payments.models import PaymentMethod
 from core.context import get_current_tenant_id
 
-from ..models import BillingProfile, Due
+from ..models import BillingProfile, Due, PlanCode
 
 
 def _tenant_users_queryset():
@@ -19,6 +19,7 @@ def _tenant_users_queryset():
 class BillingProfileSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source="user.display_name", read_only=True)
     user_posto = serializers.CharField(source="user.posto_graduacao", read_only=True)
+    plan_label = serializers.CharField(source="get_plan_display", read_only=True)
     financial_status_label = serializers.CharField(
         source="get_financial_status_display", read_only=True
     )
@@ -30,6 +31,8 @@ class BillingProfileSerializer(serializers.ModelSerializer):
             "user",
             "user_name",
             "user_posto",
+            "plan",
+            "plan_label",
             "due_day",
             "started_period",
             "is_active",
@@ -37,11 +40,12 @@ class BillingProfileSerializer(serializers.ModelSerializer):
             "financial_status_label",
             "last_payment_at",
         ]
-        read_only_fields = ["id", "financial_status", "last_payment_at"]
+        read_only_fields = ["id", "plan_label", "financial_status", "last_payment_at"]
 
 
 class ActivateBillingSerializer(serializers.Serializer):
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.none())
+    plan = serializers.ChoiceField(choices=PlanCode.choices)
     due_day = serializers.IntegerField(min_value=1, max_value=31)
     started_period = serializers.DateField()
 

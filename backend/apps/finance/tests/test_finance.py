@@ -454,7 +454,7 @@ def test_activate_billing_via_api_requires_admin(client: APIClient):
     client.force_authenticate(plain)
     resp = client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
         format="json",
     )
     assert resp.status_code == 422, resp.data
@@ -462,7 +462,7 @@ def test_activate_billing_via_api_requires_admin(client: APIClient):
     client.force_authenticate(admin)
     resp = client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
         format="json",
     )
     assert resp.status_code == 201, resp.data
@@ -497,7 +497,7 @@ def test_deactivate_billing_via_api(client: APIClient):
     client.force_authenticate(admin)
     created = client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
         format="json",
     )
     resp = client.post(f"/api/billing-profiles/{created.data['id']}/desativar")
@@ -525,7 +525,7 @@ def test_update_due_day_via_api_requires_admin(client: APIClient):
     client.force_authenticate(admin)
     created = client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
         format="json",
     )
     profile_id = created.data["id"]
@@ -554,7 +554,7 @@ def test_registrar_pagamento_via_api(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
         format="json",
     )
     resp = client.post(
@@ -613,7 +613,7 @@ def test_cancelar_pagamento_via_api(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
         format="json",
     )
     paid = client.post(
@@ -649,7 +649,7 @@ def test_cancelar_pagamento_requires_admin(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
         format="json",
     )
     paid = client.post(
@@ -679,7 +679,7 @@ def test_dues_cannot_be_deleted_directly(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
         format="json",
     )
     due = client.get(f"/api/dues?user={member.id}").data["results"][0]
@@ -745,7 +745,7 @@ def test_finance_me_returns_own_summary_or_404(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
         format="json",
     )
 
@@ -786,14 +786,14 @@ def test_reactivate_billing_via_api(client: APIClient):
     client.force_authenticate(admin)
     created = client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
         format="json",
     )
     profile_id = created.data["id"]
     client.post(f"/api/billing-profiles/{profile_id}/desativar")
     resp = client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "due_day": 12, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "due_day": 12, "started_period": _period_str(0)},
         format="json",
     )
     assert resp.status_code == 201, resp.data
@@ -923,3 +923,19 @@ def test_status_for_day_thresholds(days_late, expected):
     today = date(2026, 6, 15)
     due_date = today - timedelta(days=days_late)
     assert FinanceService()._status_for(due_date, today) == expected
+
+
+def test_activate_billing_via_api_rejects_ineligible_plan(client: APIClient):
+    tenant, admin = _org("finapi11")
+    with use_tenant(tenant.id):
+        coronel = UserService().create_user(
+            username="coronel_api", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    resp = client.post(
+        "/api/billing-profiles",
+        {"user": str(coronel.id), "plan": "barbearia", "due_day": 10, "started_period": _period_str(0)},
+        format="json",
+    )
+    assert resp.status_code == 422, resp.data

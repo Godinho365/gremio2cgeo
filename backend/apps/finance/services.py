@@ -423,6 +423,8 @@ class FinanceService(BaseService):
         next_due = open_dues[0] if open_dues else None
         return {
             "financial_status": profile.financial_status,
+            "plan": profile.plan,
+            "plan_label": profile.get_plan_display(),
             "due_day": profile.due_day,
             "next_due_date": next_due.due_date if next_due else None,
             "days_until_due": (next_due.due_date - today).days if next_due else None,

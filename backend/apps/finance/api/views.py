@@ -56,6 +56,7 @@ class BillingProfileViewSet(TenantScopedViewSet):
         payload.is_valid(raise_exception=True)
         profile = self.service.activate_billing(
             user=payload.validated_data["user"],
+            plan=payload.validated_data["plan"],
             due_day=payload.validated_data["due_day"],
             started_period=payload.validated_data["started_period"],
             actor_id=str(request.user.pk),
