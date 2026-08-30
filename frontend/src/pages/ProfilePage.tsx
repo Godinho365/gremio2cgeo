@@ -18,6 +18,7 @@ import {
   PLAN_LABEL,
   useMyFinance,
   useSelfSubscribe,
+  type PlanCode,
 } from "../features/finance/api";
 import { formatDateBr, maskCpf, maskPhone } from "../lib/masks";
 
@@ -342,13 +343,15 @@ function FinanceCard() {
   );
 }
 
-/** Quem não tem plano ativo vê aqui como assinar (ou o aviso de posto
- * pendente de reclassificação). */
+/** Quem não tem plano ativo vê aqui como assinar (sem depender do
+ * administrador ativar ou de convite) — ou o aviso de posto pendente de
+ * reclassificação. */
 function NoPlanCard() {
   const { user } = useAuth();
   const { data, isLoading } = useMyFinance();
   const subscribe = useSelfSubscribe();
   const [error, setError] = useState<string | null>(null);
+  const [ativando, setAtivando] = useState<PlanCode | null>(null);
 
   if (isLoading || data) return null;
   const posto = user?.posto_graduacao ?? "";
@@ -366,16 +369,19 @@ function NoPlanCard() {
     );
   }
 
-  const podeBarbearia = eligiblePlansFor(posto).includes("barbearia");
+  const planos = eligiblePlansFor(posto);
 
-  async function assinar() {
+  async function assinar(plan: PlanCode) {
     setError(null);
+    setAtivando(plan);
     try {
-      await subscribe.mutateAsync();
+      await subscribe.mutateAsync(plan);
     } catch (err) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } }).response
         ?.data?.error?.message;
-      setError(msg ?? "Não foi possível ativar a assinatura.");
+      setError(msg ?? "Não foi possível ativar o plano.");
+    } finally {
+      setAtivando(null);
     }
   }
 
@@ -386,15 +392,26 @@ function NoPlanCard() {
       </div>
       <div className="card-body">
         {error && <div className="alert alert-danger">{error}</div>}
-        <p className="text-secondary">Sem plano ativo.</p>
-        {podeBarbearia ? (
-          <button className="btn btn-primary" onClick={assinar} disabled={subscribe.isPending}>
-            {subscribe.isPending ? "Ativando…" : `Ativar ${PLAN_LABEL.barbearia}`}
-          </button>
+        {planos.length === 0 ? (
+          <p className="text-secondary mb-0">
+            Informe seu posto/graduação abaixo para ver os planos disponíveis.
+          </p>
         ) : (
-          <a href="/barbearia" className="btn btn-outline-primary">
-            Marcar corte avulso
-          </a>
+          <>
+            <p className="text-secondary">Sem plano ativo.</p>
+            <div className="d-flex flex-wrap gap-2">
+              {planos.map((plan) => (
+                <button
+                  key={plan}
+                  className="btn btn-primary"
+                  onClick={() => assinar(plan)}
+                  disabled={subscribe.isPending}
+                >
+                  {ativando === plan ? "Ativando…" : `Ativar ${PLAN_LABEL[plan]}`}
+                </button>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>

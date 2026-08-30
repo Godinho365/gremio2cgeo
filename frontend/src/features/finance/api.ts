@@ -155,7 +155,8 @@ export function useAcceptAssociadoInvite() {
 export function useSelfSubscribe() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async () => (await api.post<BillingProfile>("/finance/me/assinar")).data,
+    mutationFn: async (plan: PlanCode) =>
+      (await api.post<BillingProfile>("/finance/me/assinar", { plan })).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["finance"] }),
   });
 }

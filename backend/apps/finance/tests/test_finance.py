@@ -1087,10 +1087,41 @@ def test_self_subscribe_activates_barbearia_plan_for_eligible_user(client: APICl
             posto_graduacao="Cb", tenant_id=tenant.id,
         )
     client.force_authenticate(cabo)
-    resp = client.post("/api/finance/me/assinar")
+    resp = client.post("/api/finance/me/assinar", {"plan": "barbearia"}, format="json")
     assert resp.status_code == 201, resp.data
     assert resp.data["plan"] == "barbearia"
     assert resp.data["is_active"] is True
+
+
+def test_self_subscribe_activates_associado_full_without_admin_or_invite(client: APIClient):
+    """Não depende do admin ativar nem de convite — qualquer posto elegível
+    ao Associado Full ativa sozinho pelo próprio perfil."""
+    tenant, admin = _org("finapi13b")
+    with use_tenant(tenant.id):
+        coronel = UserService().create_user(
+            username="coronel_auto_full", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant.id,
+        )
+    client.force_authenticate(coronel)
+    resp = client.post("/api/finance/me/assinar", {"plan": "associado"}, format="json")
+    assert resp.status_code == 201, resp.data
+    assert resp.data["plan"] == "associado"
+    assert resp.data["is_active"] is True
+
+
+def test_self_subscribe_cb_can_choose_associado_full(client: APIClient):
+    """Cb/Sd EP escolhem entre os dois planos — não fica travado na
+    Assinatura Barbearia (que era o único plano suportado antes)."""
+    tenant, admin = _org("finapi13c")
+    with use_tenant(tenant.id):
+        cabo = UserService().create_user(
+            username="cabo_auto_full", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant.id,
+        )
+    client.force_authenticate(cabo)
+    resp = client.post("/api/finance/me/assinar", {"plan": "associado"}, format="json")
+    assert resp.status_code == 201, resp.data
+    assert resp.data["plan"] == "associado"
 
 
 def test_self_subscribe_rejects_ineligible_rank(client: APIClient):
@@ -1101,8 +1132,25 @@ def test_self_subscribe_rejects_ineligible_rank(client: APIClient):
             posto_graduacao="Cel", tenant_id=tenant.id,
         )
     client.force_authenticate(coronel)
+    resp = client.post("/api/finance/me/assinar", {"plan": "barbearia"}, format="json")
+    assert resp.status_code == 422, resp.data
+
+
+def test_self_subscribe_rejects_missing_or_invalid_plan(client: APIClient):
+    tenant, admin = _org("finapi14b")
+    with use_tenant(tenant.id):
+        cabo = UserService().create_user(
+            username="cabo_sem_plano_body", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant.id,
+        )
+    client.force_authenticate(cabo)
     resp = client.post("/api/finance/me/assinar")
     assert resp.status_code == 422, resp.data
+    assert resp.data["error"]["code"] == "invalid_plan"
+
+    resp = client.post("/api/finance/me/assinar", {"plan": "ouro"}, format="json")
+    assert resp.status_code == 422, resp.data
+    assert resp.data["error"]["code"] == "invalid_plan"
 
 
 def test_self_subscribe_rejects_when_already_active(client: APIClient):
@@ -1113,8 +1161,8 @@ def test_self_subscribe_rejects_when_already_active(client: APIClient):
             posto_graduacao="Cb", tenant_id=tenant.id,
         )
     client.force_authenticate(cabo)
-    client.post("/api/finance/me/assinar")
-    resp = client.post("/api/finance/me/assinar")
+    client.post("/api/finance/me/assinar", {"plan": "barbearia"}, format="json")
+    resp = client.post("/api/finance/me/assinar", {"plan": "barbearia"}, format="json")
     assert resp.status_code == 422, resp.data
 
 

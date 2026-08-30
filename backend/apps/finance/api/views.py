@@ -204,21 +204,26 @@ class MyFinanceView(TenantContextAPIView):
 
 
 class SelfSubscribeView(TenantContextAPIView):
-    """Autoatendimento: o próprio usuário assina a Assinatura Barbearia.
+    """Autoatendimento: o próprio usuário ativa um plano do financeiro sem
+    depender do administrador — Associado Full ou Assinatura Barbearia,
+    conforme o que o posto permitir.
 
     A elegibilidade (`_assert_eligible` dentro de `activate_billing`) já
-    recusa sozinha quem não é Cb/Sd EP/Sd EV — não precisa duplicar a
-    checagem aqui.
+    recusa sozinha quem não pode assinar o plano escolhido — não precisa
+    duplicar a checagem aqui.
     """
 
     permission_classes = [IsAuthenticated]
     service = FinanceService()
 
     def post(self, request: Request) -> Response:
+        plan = request.data.get("plan")
+        if plan not in PlanCode.values:
+            raise BusinessRuleError("Escolha um plano válido.", code="invalid_plan")
         today = timezone.localdate()
         profile = self.service.activate_billing(
             user=request.user,
-            plan=PlanCode.BARBEARIA,
+            plan=plan,
             due_day=today.day,
             started_period=today.replace(day=1),
             actor_id=str(request.user.pk),
