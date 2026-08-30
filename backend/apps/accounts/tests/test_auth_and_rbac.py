@@ -56,7 +56,7 @@ def test_signup_rejects_invalid_cpf_and_mismatched_email(client: APIClient):
     base = {
         "full_name": "Maria",
         "nome_guerra": "SOUZA",
-        "posto_graduacao": "Sd",
+        "posto_graduacao": "Sd EP",
         "birth_date": "1990-05-10",
         "email": "maria@ex.com",
         "email_confirm": "maria@ex.com",
@@ -116,7 +116,7 @@ def test_admin_user_creation_rejects_invalid_cpf(client: APIClient):
         {
             "full_name": "Maria",
             "nome_guerra": "SOUZA",
-            "posto_graduacao": "Sd",
+            "posto_graduacao": "Sd EP",
             "cpf": "111.111.111-11",  # inválido
             "email": "maria@ex.com",
             "password": "supersecret123",
@@ -143,7 +143,7 @@ def test_admin_creates_person_without_access(client: APIClient):
         {
             "full_name": "Visitante da Silva",
             "nome_guerra": "VISITANTE",
-            "posto_graduacao": "Sd",
+            "posto_graduacao": "Sd EP",
             "is_active": False,
             "role_codes": ["user"],
         },
@@ -160,7 +160,7 @@ def test_admin_creates_person_without_access(client: APIClient):
         "/api/auth/token", {"username": user.username, "password": ""}, format="json"
     ).status_code == 400
     # e serve de solicitante numa reserva feita pelo gestor
-    assert user.display_name == "Sd VISITANTE"
+    assert user.display_name == "Sd EP VISITANTE"
 
 
 def test_person_without_access_needs_a_name(client: APIClient):
@@ -373,14 +373,14 @@ def test_create_user_with_rank_and_war_name(client: APIClient):
             "username": "sd_souza",
             "password": "supersecret123",
             "nome_guerra": "SOUZA",
-            "posto_graduacao": "Sd",
+            "posto_graduacao": "Sd EP",
             "role_codes": ["user"],
         },
         format="json",
     )
     assert resp.status_code == 201, resp.data
     assert resp.data["nome_guerra"] == "SOUZA"
-    assert resp.data["display_name"] == "Sd SOUZA"
+    assert resp.data["display_name"] == "Sd EP SOUZA"
 
 
 def test_non_admin_cannot_create_user(client: APIClient):
@@ -429,7 +429,7 @@ def _member(email: str = "perfil@ex.com", password: str = "supersecret123") -> U
             email=email,
             full_name="Ana Souza",
             nome_guerra="SOUZA",
-            posto_graduacao="Sd",
+            posto_graduacao="Sd EP",
             cpf="11144477735",
             birth_date="1990-05-10",
             role_codes=[RoleCode.USER],
@@ -526,7 +526,7 @@ def test_user_can_change_their_own_rank(client: APIClient):
         pessoa = UserService().create_user(
             username="sd_promo", password="supersecret123",
             role_codes=[RoleCode.USER], tenant_id=tenant.id,
-            posto_graduacao="Sd", nome_guerra="PROMO",
+            posto_graduacao="Sd EP", nome_guerra="PROMO",
         )
     client.force_authenticate(pessoa)
 
@@ -549,7 +549,7 @@ def test_create_user_with_soldado_rank_forces_barbershop_client_role(tenant_a):
         user = UserService().create_user(
             username="soldado1",
             password="supersecret123",
-            posto_graduacao="Sd",
+            posto_graduacao="Sd EP",
             role_codes=[RoleCode.ADMIN],
             tenant_id=tenant_a.id,
         )
@@ -578,7 +578,7 @@ def test_update_user_cannot_self_demote_via_rank_change(tenant_a):
             role_codes=[RoleCode.ADMIN], tenant_id=tenant_a.id,
         )
         with pytest.raises(BusinessRuleError):
-            UserService().update_user(user=admin, actor=admin, posto_graduacao="Sd")
+            UserService().update_user(user=admin, actor=admin, posto_graduacao="Sd EP")
 
 
 def test_update_profile_rank_change_to_soldado_overrides_role(tenant_a):
@@ -587,7 +587,7 @@ def test_update_profile_rank_change_to_soldado_overrides_role(tenant_a):
             username="usuario1", password="supersecret123",
             role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        UserService().update_profile(user=user, posto_graduacao="Sd")
+        UserService().update_profile(user=user, posto_graduacao="Sd EP")
         user.refresh_from_db()
     assert list(user.roles.values_list("code", flat=True)) == [RoleCode.BARBERSHOP_CLIENT]
 
@@ -599,7 +599,7 @@ def test_signup_with_soldado_rank_gets_barbershop_client_role(client: APIClient)
         {
             "full_name": "Soldado Teste",
             "nome_guerra": "TESTE",
-            "posto_graduacao": "Sd",
+            "posto_graduacao": "Sd EP",
             "cpf": "111.444.777-35",
             "birth_date": "1990-05-10",
             "email": "soldado@ex.com",
@@ -622,7 +622,7 @@ def test_update_profile_cannot_self_demote_via_rank_change(tenant_a):
             role_codes=[RoleCode.ADMIN], tenant_id=tenant_a.id,
         )
         with pytest.raises(BusinessRuleError):
-            UserService().update_profile(user=admin, posto_graduacao="Sd")
+            UserService().update_profile(user=admin, posto_graduacao="Sd EP")
         admin.refresh_from_db()
     assert admin.has_role(RoleCode.ADMIN)
 

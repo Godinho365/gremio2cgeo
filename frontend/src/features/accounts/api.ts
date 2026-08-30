@@ -179,7 +179,8 @@ export const MILITARY_RANKS: { group: string; items: { value: string; label: str
       { value: "2º Sgt", label: "2º Sargento" },
       { value: "3º Sgt", label: "3º Sargento" },
       { value: "Cb", label: "Cabo" },
-      { value: "Sd", label: "Soldado" },
+      { value: "Sd EP", label: "Soldado EP" },
+      { value: "Sd EV", label: "Soldado EV" },
     ],
   },
 ];

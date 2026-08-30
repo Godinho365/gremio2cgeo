@@ -41,7 +41,7 @@ class Command(BaseCommand):
                 password=NORMAL[1],
                 email="usuario@exemplo.com",
                 nome_guerra="SOUZA",
-                posto_graduacao="Sd",
+                posto_graduacao="Sd EP",
                 role_codes=[RoleCode.USER],
                 tenant_id=tenant.id,
             )

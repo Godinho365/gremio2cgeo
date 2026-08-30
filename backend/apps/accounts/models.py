@@ -21,9 +21,12 @@ class RoleCode(models.TextChoices):
     BARBERSHOP_CLIENT = "barbershop_client", "Cliente da Barbearia"
 
 
-# Praças (Sd/Cb) têm regras próprias em mais de um módulo (perfil de acesso,
-# relação financeira) — uma única fonte de verdade evita duplicar o literal.
-BARBERSHOP_ONLY_RANKS = frozenset({"Sd", "Cb"})
+# Praças (Cb/Sd EP/Sd EV) só têm o perfil de acesso "Cliente da Barbearia"
+# (sem Patrimônio) — ver UserService._forced_roles_for_rank. A elegibilidade
+# a planos financeiros é uma regra independente, em apps.finance
+# (eligible_plans_for): desde a Fase 2 essa população paga mensalidade
+# normalmente, só não tem acesso ao módulo de Patrimônio.
+BARBERSHOP_ONLY_RANKS = frozenset({"Sd EP", "Sd EV", "Cb"})
 
 
 class Role(TimeStampedModel):
