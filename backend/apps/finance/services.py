@@ -734,10 +734,41 @@ class FinanceService(BaseService):
             "upcoming_receivable": upcoming.aggregate(s=Sum("amount"))["s"] or Decimal("0.00"),
         }
 
-    def monthly_report(self, *, months: int = 6) -> list[dict]:
-        """Últimos `months` meses (mais antigo primeiro): a situação das
-        mensalidades cujo período é aquele mês — geradas, pagas
-        ("arrecadado do mês") e em aberto.
+    def _monthly_row(self, period: date) -> dict:
+        dues_period = self.dues.query().filter(period=period)
+        paid = dues_period.filter(status=DueStatus.PAID)
+        open_dues = dues_period.filter(status__in=OPEN_DUE_STATUSES)
+        total_amount = dues_period.aggregate(s=Sum("amount"))["s"] or Decimal("0.00")
+        open_amount = open_dues.aggregate(s=Sum("amount"))["s"] or Decimal("0.00")
+
+        by_plan: dict[str, dict] = {}
+        for plan in PlanCode.values:
+            plan_paid = paid.filter(billing_profile__plan=plan)
+            plan_open = open_dues.filter(billing_profile__plan=plan)
+            by_plan[plan] = {
+                "paid_amount": plan_paid.aggregate(s=Sum("amount"))["s"] or Decimal("0.00"),
+                "paid_count": plan_paid.count(),
+                "open_amount": plan_open.aggregate(s=Sum("amount"))["s"] or Decimal("0.00"),
+                "open_count": plan_open.count(),
+            }
+
+        return {
+            "period": period,
+            "dues_total_amount": total_amount,
+            "dues_total_count": dues_period.count(),
+            "dues_paid_amount": paid.aggregate(s=Sum("amount"))["s"] or Decimal("0.00"),
+            "dues_paid_count": paid.count(),
+            "dues_open_amount": open_amount,
+            "dues_open_count": open_dues.count(),
+            "delinquency_rate": (open_amount / total_amount) if total_amount > 0 else Decimal("0.00"),
+            "by_plan": by_plan,
+        }
+
+    def monthly_report(self, *, year: int) -> list[dict]:
+        """Ano civil (jan-dez): a situação das mensalidades de cada mês —
+        geradas, pagas ("arrecadado do mês"), em aberto, taxa de
+        inadimplência, variação do arrecadado sobre o mês anterior e a
+        quebra por plano (Associado Full x Assinatura Barbearia).
 
         Por competência, não por caixa: uma mensalidade de junho paga em
         agosto (atrasada) conta pra junho, não pra agosto — vencimento é
@@ -745,27 +776,18 @@ class FinanceService(BaseService):
         era dele. Não filtra por perfil ativo: histórico não some quando
         alguém é desativado depois — diferente do dashboard "de hoje" acima.
         """
-        months = max(1, min(months, 24))
-        current = _first_of_month(timezone.localdate())
-        start = _add_months(current, -(months - 1))
+        periods = [date(year, m, 1) for m in range(1, 13)]
+        previous_row = self._monthly_row(_add_months(periods[0], -1))
 
         report = []
-        for i in range(months):
-            period = _add_months(start, i)
-            dues_period = self.dues.query().filter(period=period)
-            paid = dues_period.filter(status=DueStatus.PAID)
-            open_dues = dues_period.filter(status__in=OPEN_DUE_STATUSES)
-            report.append(
-                {
-                    "period": period,
-                    "dues_total_amount": dues_period.aggregate(s=Sum("amount"))["s"]
-                    or Decimal("0.00"),
-                    "dues_total_count": dues_period.count(),
-                    "dues_paid_amount": paid.aggregate(s=Sum("amount"))["s"] or Decimal("0.00"),
-                    "dues_paid_count": paid.count(),
-                    "dues_open_amount": open_dues.aggregate(s=Sum("amount"))["s"]
-                    or Decimal("0.00"),
-                    "dues_open_count": open_dues.count(),
-                }
+        prev_paid = previous_row["dues_paid_amount"]
+        for period in periods:
+            row = self._monthly_row(period)
+            row["revenue_change_pct"] = (
+                float((row["dues_paid_amount"] - prev_paid) / prev_paid * 100)
+                if prev_paid > 0
+                else None
             )
+            report.append(row)
+            prev_paid = row["dues_paid_amount"]
         return report

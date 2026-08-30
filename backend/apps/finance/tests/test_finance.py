@@ -440,17 +440,19 @@ def test_dashboard_counts_active_profiles_by_financial_status(tenant_a):
     assert data["overdue_count"] + data["delinquent_count"] >= 1
 
 
+def _monthly_rows_for(period) -> dict:
+    """Busca o comparativo mensal do ano civil a que `period` pertence,
+    indexado por período — evita quebrar se o mês de referência cair em
+    dezembro/janeiro de anos diferentes."""
+    return {r["period"]: r for r in FinanceService().monthly_report(year=period.year)}
+
+
 def test_monthly_report_shape_and_ordering(tenant_a):
     with use_tenant(tenant_a.id):
-        rows = FinanceService().monthly_report(months=3)
-    assert len(rows) == 3
-    assert [r["period"] for r in rows] == [_period(-2), _period(-1), _period(0)]
-
-
-def test_monthly_report_clamps_months_between_1_and_24(tenant_a):
-    with use_tenant(tenant_a.id):
-        assert len(FinanceService().monthly_report(months=0)) == 1
-        assert len(FinanceService().monthly_report(months=999)) == 24
+        ano = _period(0).year
+        rows = FinanceService().monthly_report(year=ano)
+    assert len(rows) == 12
+    assert [r["period"] for r in rows] == [date(ano, m, 1) for m in range(1, 13)]
 
 
 def test_monthly_report_computes_dues_for_current_month(tenant_a):
@@ -474,14 +476,13 @@ def test_monthly_report_computes_dues_for_current_month(tenant_a):
         FinanceService().register_payment(
             user=pago, amount=Decimal("100.00"), method="pix", paid_at=timezone.now(),
         )
-        rows = FinanceService().monthly_report(months=1)
-    mes_atual = rows[0]
-    assert mes_atual["period"] == _period(0)
+        mes_atual = _monthly_rows_for(_period(0))[_period(0)]
     assert mes_atual["dues_total_count"] == 2
     assert mes_atual["dues_paid_count"] == 1
     assert mes_atual["dues_paid_amount"] == Decimal("100.00")
     assert mes_atual["dues_open_count"] == 1
     assert mes_atual["dues_open_amount"] == Decimal("100.00")
+    assert mes_atual["delinquency_rate"] == Decimal("0.5")
 
 
 def test_monthly_report_attributes_late_payment_to_the_original_month():
@@ -503,12 +504,84 @@ def test_monthly_report_attributes_late_payment_to_the_original_month():
         FinanceService().register_payment(
             user=atrasado, amount=Decimal("100.00"), method="pix", paid_at=timezone.now(),
         )
-        rows = {r["period"]: r for r in FinanceService().monthly_report(months=2)}
-    mes_passado = rows[_period(-1)]
-    mes_atual = rows[_period(0)]
+        mes_passado = _monthly_rows_for(_period(-1))[_period(-1)]
+        mes_atual = _monthly_rows_for(_period(0))[_period(0)]
     assert mes_passado["dues_paid_amount"] == Decimal("100.00")
     assert mes_passado["dues_paid_count"] == 1
     assert mes_atual["dues_paid_amount"] == Decimal("0.00")
+
+
+def test_monthly_report_computes_revenue_change_pct(tenant_a):
+    """Variação percentual do arrecadado sobre o mês anterior — cruza a
+    fronteira do ano civil por dentro (monthly_report sempre olha um mês
+    antes do 1º de janeiro pra calcular a variação de janeiro)."""
+    with use_tenant(tenant_a.id):
+        m1 = UserService().create_user(
+            username="variacao_m1", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        m2a = UserService().create_user(
+            username="variacao_m2a", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        m2b = UserService().create_user(
+            username="variacao_m2b", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(
+            user=m1, plan=PlanCode.ASSOCIADO,
+            due_day=timezone.localdate().day, started_period=_period(-1),
+        )
+        FinanceService().activate_billing(
+            user=m2a, plan=PlanCode.ASSOCIADO,
+            due_day=timezone.localdate().day, started_period=_period(0),
+        )
+        FinanceService().activate_billing(
+            user=m2b, plan=PlanCode.ASSOCIADO,
+            due_day=timezone.localdate().day, started_period=_period(0),
+        )
+        FinanceService().register_payment(
+            user=m1, amount=Decimal("100.00"), method="pix", paid_at=timezone.now(),
+        )
+        FinanceService().register_payment(
+            user=m2a, amount=Decimal("100.00"), method="pix", paid_at=timezone.now(),
+        )
+        FinanceService().register_payment(
+            user=m2b, amount=Decimal("100.00"), method="pix", paid_at=timezone.now(),
+        )
+        mes_atual = _monthly_rows_for(_period(0))[_period(0)]
+    assert mes_atual["dues_paid_amount"] == Decimal("200.00")
+    assert mes_atual["revenue_change_pct"] == 100.0
+
+
+def test_monthly_report_breaks_down_by_plan(tenant_a):
+    with use_tenant(tenant_a.id):
+        associado = UserService().create_user(
+            username="plano_associado", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        cb = UserService().create_user(
+            username="plano_barbearia", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(
+            user=associado, plan=PlanCode.ASSOCIADO,
+            due_day=timezone.localdate().day, started_period=_period(0),
+        )
+        FinanceService().activate_billing(
+            user=cb, plan=PlanCode.BARBEARIA,
+            due_day=timezone.localdate().day, started_period=_period(0),
+        )
+        FinanceService().register_payment(
+            user=associado, amount=Decimal("100.00"), method="pix", paid_at=timezone.now(),
+        )
+        mes_atual = _monthly_rows_for(_period(0))[_period(0)]
+    assert mes_atual["by_plan"]["associado"]["paid_amount"] == Decimal("100.00")
+    assert mes_atual["by_plan"]["associado"]["paid_count"] == 1
+    assert mes_atual["by_plan"]["associado"]["open_count"] == 0
+    assert mes_atual["by_plan"]["barbearia"]["paid_amount"] == Decimal("0.00")
+    assert mes_atual["by_plan"]["barbearia"]["open_amount"] == Decimal("100.00")
+    assert mes_atual["by_plan"]["barbearia"]["open_count"] == 1
 
 
 def test_monthly_report_ignores_dues_outside_the_period_regardless_of_active_status(tenant_a):
@@ -526,8 +599,8 @@ def test_monthly_report_ignores_dues_outside_the_period_regardless_of_active_sta
         from apps.finance.models import BillingProfile
 
         BillingProfile.objects.filter(user=membro).update(is_active=False)
-        rows = FinanceService().monthly_report(months=1)
-    assert rows[0]["dues_total_count"] == 1
+        mes_atual = _monthly_rows_for(_period(0))[_period(0)]
+    assert mes_atual["dues_total_count"] == 1
 
 
 def test_activate_billing_via_api_requires_admin(client: APIClient):
@@ -832,11 +905,14 @@ def test_finance_monthly_report_requires_staff_read(client: APIClient):
     assert client.get("/api/finance/dashboard/mensal").status_code == 422
 
     client.force_authenticate(admin)
-    resp = client.get("/api/finance/dashboard/mensal?months=3")
+    resp = client.get(f"/api/finance/dashboard/mensal?year={timezone.localdate().year}")
     assert resp.status_code == 200, resp.data
-    assert len(resp.data) == 3
+    assert len(resp.data) == 12
     assert "period" in resp.data[0]
     assert "dues_paid_amount" in resp.data[0]
+    assert "delinquency_rate" in resp.data[0]
+    assert "revenue_change_pct" in resp.data[0]
+    assert "by_plan" in resp.data[0]
 
 
 def test_finance_me_returns_own_summary_or_404(client: APIClient):

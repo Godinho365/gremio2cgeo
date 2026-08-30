@@ -299,6 +299,13 @@ export function useFinanceDashboard() {
   });
 }
 
+export interface PlanBreakdown {
+  paid_amount: string;
+  paid_count: number;
+  open_amount: string;
+  open_count: number;
+}
+
 export interface MonthlyReportRow {
   period: string;
   dues_total_amount: string;
@@ -307,13 +314,19 @@ export interface MonthlyReportRow {
   dues_paid_count: number;
   dues_open_amount: string;
   dues_open_count: number;
+  /** Fração 0–1 (em aberto / total do mês) — multiplique por 100 pra exibir. */
+  delinquency_rate: string;
+  /** Variação % do arrecadado sobre o mês anterior; null sem base de comparação. */
+  revenue_change_pct: number | null;
+  by_plan: Record<PlanCode, PlanBreakdown>;
 }
 
-export function useFinanceMonthlyReport(months: number) {
+/** Ano civil (jan–dez) — comparativo mensal completo do painel do admin. */
+export function useFinanceMonthlyReport(year: number) {
   return useQuery({
-    queryKey: ["finance", "monthly-report", months],
+    queryKey: ["finance", "monthly-report", year],
     queryFn: async () =>
-      (await api.get<MonthlyReportRow[]>(`/finance/dashboard/mensal?months=${months}`)).data,
+      (await api.get<MonthlyReportRow[]>(`/finance/dashboard/mensal?year=${year}`)).data,
   });
 }
 

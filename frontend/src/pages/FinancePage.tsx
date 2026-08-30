@@ -1,5 +1,5 @@
 import { IconBuildingBank, IconDownload, IconPlus } from "@tabler/icons-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { brl } from "../features/barbershop/api";
@@ -34,7 +34,8 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-const MONTH_RANGE_OPTIONS = [3, 6, 12] as const;
+const ANO_ATUAL = new Date().getFullYear();
+const YEAR_OPTIONS = [0, 1, 2, 3, 4].map((n) => ANO_ATUAL - n);
 
 function mesLabel(periodIso: string): string {
   const [ano, mes] = periodIso.split("-").map(Number);
@@ -114,16 +115,24 @@ function exportarRelatorioMensalCsv(rows: MonthlyReportRow[]) {
     "Mensalidades geradas",
     "Pagas (qtd)",
     "Arrecadado (R$)",
+    "Variação vs mês anterior (%)",
+    "Taxa de inadimplência (%)",
     "Em aberto (qtd)",
     "Valor em aberto (R$)",
+    "Associado Full pago (R$)",
+    "Assinatura Barbearia pago (R$)",
   ];
   const linhas = rows.map((r) => [
     r.period,
     String(r.dues_total_count),
     String(r.dues_paid_count),
     r.dues_paid_amount,
+    r.revenue_change_pct == null ? "" : r.revenue_change_pct.toFixed(1),
+    (Number(r.delinquency_rate) * 100).toFixed(1),
     String(r.dues_open_count),
     r.dues_open_amount,
+    r.by_plan.associado?.paid_amount ?? "0.00",
+    r.by_plan.barbearia?.paid_amount ?? "0.00",
   ]);
   const csv = [cabecalho, ...linhas].map((cols) => cols.join(";")).join("\n");
   const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
@@ -135,29 +144,101 @@ function exportarRelatorioMensalCsv(rows: MonthlyReportRow[]) {
   URL.revokeObjectURL(url);
 }
 
-/** Comparativo por mês: arrecadação de caixa e situação das mensalidades de
- * cada período — gráfico, tabela e exportação CSV. */
+function VariacaoBadge({ pct }: { pct: number | null }) {
+  if (pct == null) return <span className="text-secondary">—</span>;
+  const positivo = pct > 0;
+  const zero = pct === 0;
+  return (
+    <span className={zero ? "text-secondary" : positivo ? "text-green" : "text-red"}>
+      {positivo ? "▲" : zero ? "" : "▼"} {Math.abs(pct).toFixed(1)}%
+    </span>
+  );
+}
+
+/** Detalhe de um mês selecionado: quebra por plano (Associado Full x
+ * Assinatura Barbearia) — só aparece quando alguém clica numa linha. */
+function MonthlyDetail({ row, onClose }: { row: MonthlyReportRow; onClose: () => void }) {
+  return (
+    <div className="card-body border-top">
+      <div className="d-flex align-items-center justify-content-between mb-2">
+        <h4 className="m-0">Detalhe — {mesLabel(row.period)}</h4>
+        <button type="button" className="btn btn-sm btn-ghost-secondary" onClick={onClose}>
+          Fechar
+        </button>
+      </div>
+      <div className="table-responsive">
+        <table className="table table-sm table-vcenter">
+          <thead>
+            <tr>
+              <th>Plano</th>
+              <th className="text-end">Pagas</th>
+              <th className="text-end">Arrecadado</th>
+              <th className="text-end">Em aberto</th>
+              <th className="text-end">Valor em aberto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(["associado", "barbearia"] as const).map((plan) => {
+              const b = row.by_plan[plan];
+              return (
+                <tr key={plan}>
+                  <td>{PLAN_LABEL[plan]}</td>
+                  <td className="text-end">{b?.paid_count ?? 0}</td>
+                  <td className="text-end">R$ {brl(b?.paid_amount ?? "0.00")}</td>
+                  <td className="text-end">{b?.open_count ?? 0}</td>
+                  <td className="text-end">R$ {brl(b?.open_amount ?? "0.00")}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** Comparativo por ano civil: arrecadação e situação das mensalidades de
+ * cada mês — gráfico, indicadores, tabela clicável e exportação CSV. */
 function MonthlyReportSection() {
-  const [months, setMonths] = useState<(typeof MONTH_RANGE_OPTIONS)[number]>(6);
-  const { data: rows, isLoading } = useFinanceMonthlyReport(months);
+  const [year, setYear] = useState(ANO_ATUAL);
+  const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
+  const { data: rows, isLoading } = useFinanceMonthlyReport(year);
+
+  const resumo = useMemo(() => {
+    if (!rows || rows.length === 0) return null;
+    const somaPago = rows.reduce((s, r) => s + Number(r.dues_paid_amount), 0);
+    const somaAberto = rows.reduce((s, r) => s + Number(r.dues_open_amount), 0);
+    const somaTotal = rows.reduce((s, r) => s + Number(r.dues_total_amount), 0);
+    const somaGeradas = rows.reduce((s, r) => s + r.dues_total_count, 0);
+    return {
+      pago: somaPago,
+      aberto: somaAberto,
+      geradas: somaGeradas,
+      inadimplenciaMedia: somaTotal > 0 ? (somaAberto / somaTotal) * 100 : 0,
+    };
+  }, [rows]);
+
+  const selectedRow = rows?.find((r) => r.period === selectedPeriod) ?? null;
 
   return (
     <div className="card mt-3">
       <div className="card-header">
         <h3 className="card-title">Comparativo mensal</h3>
         <div className="card-actions d-flex align-items-center gap-2">
-          <div className="btn-group">
-            {MONTH_RANGE_OPTIONS.map((n) => (
-              <button
-                key={n}
-                type="button"
-                className={`btn btn-sm ${months === n ? "btn-primary" : "btn-outline-secondary"}`}
-                onClick={() => setMonths(n)}
-              >
-                {n} meses
-              </button>
+          <select
+            className="form-select form-select-sm w-auto"
+            value={year}
+            onChange={(e) => {
+              setYear(Number(e.target.value));
+              setSelectedPeriod(null);
+            }}
+          >
+            {YEAR_OPTIONS.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
             ))}
-          </div>
+          </select>
           <button
             type="button"
             className="btn btn-sm btn-outline-secondary"
@@ -169,6 +250,19 @@ function MonthlyReportSection() {
           </button>
         </div>
       </div>
+
+      {resumo && (
+        <div className="row row-cards g-3 p-3 pb-0">
+          <StatCard label={`Arrecadado em ${year}`} value={`R$ ${brl(resumo.pago)}`} />
+          <StatCard label={`Em aberto em ${year}`} value={`R$ ${brl(resumo.aberto)}`} />
+          <StatCard
+            label="Taxa de inadimplência média"
+            value={`${resumo.inadimplenciaMedia.toFixed(1)}%`}
+          />
+          <StatCard label="Mensalidades geradas no ano" value={resumo.geradas} />
+        </div>
+      )}
+
       <div className="card-body">
         {isLoading && <div className="text-secondary">Carregando…</div>}
         {rows && rows.length > 0 && (
@@ -189,30 +283,42 @@ function MonthlyReportSection() {
                 />
                 Em aberto
               </span>
+              <span className="ms-auto">Clique numa linha da tabela pra ver a quebra por plano.</span>
             </div>
           </>
         )}
       </div>
       {rows && rows.length > 0 && (
         <div className="table-responsive">
-          <table className="table table-vcenter card-table">
+          <table className="table table-vcenter card-table table-hover">
             <thead>
               <tr>
                 <th>Mês</th>
                 <th className="text-end">Mensalidades</th>
                 <th className="text-end">Pagas</th>
                 <th className="text-end">Arrecadado</th>
+                <th className="text-end">Δ mês anterior</th>
+                <th className="text-end">Inadimplência</th>
                 <th className="text-end">Em aberto</th>
                 <th className="text-end">Valor em aberto</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.period}>
+                <tr
+                  key={r.period}
+                  role="button"
+                  className={r.period === selectedPeriod ? "table-active" : ""}
+                  onClick={() => setSelectedPeriod(r.period === selectedPeriod ? null : r.period)}
+                >
                   <td>{mesLabel(r.period)}</td>
                   <td className="text-end">{r.dues_total_count}</td>
                   <td className="text-end">{r.dues_paid_count}</td>
                   <td className="text-end">R$ {brl(r.dues_paid_amount)}</td>
+                  <td className="text-end">
+                    <VariacaoBadge pct={r.revenue_change_pct} />
+                  </td>
+                  <td className="text-end">{(Number(r.delinquency_rate) * 100).toFixed(1)}%</td>
                   <td className="text-end">{r.dues_open_count}</td>
                   <td className="text-end">R$ {brl(r.dues_open_amount)}</td>
                 </tr>
@@ -221,6 +327,7 @@ function MonthlyReportSection() {
           </table>
         </div>
       )}
+      {selectedRow && <MonthlyDetail row={selectedRow} onClose={() => setSelectedPeriod(null)} />}
     </div>
   );
 }

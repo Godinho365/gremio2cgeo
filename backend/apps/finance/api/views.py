@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
 from rest_framework.exceptions import MethodNotAllowed
@@ -176,8 +177,8 @@ class FinanceDashboardView(TenantContextAPIView):
 
 
 class FinanceMonthlyReportView(TenantContextAPIView):
-    """Comparativo mensal (arrecadação + mensalidades por período), para o
-    gráfico/tabela/exportação do painel do admin."""
+    """Comparativo mensal (arrecadação + mensalidades por período, ano
+    civil), para o gráfico/tabela/exportação do painel do admin."""
 
     permission_classes = [IsAuthenticated]
     service = FinanceService()
@@ -185,12 +186,12 @@ class FinanceMonthlyReportView(TenantContextAPIView):
     def get(self, request: Request) -> Response:
         if not _can_read(request.user):
             raise BusinessRuleError("Sem permissão para ver o financeiro.", code="forbidden")
-        raw_months = request.query_params.get("months")
+        raw_year = request.query_params.get("year")
         try:
-            months = int(raw_months) if raw_months else 6
+            year = int(raw_year) if raw_year else timezone.localdate().year
         except ValueError:
-            months = 6
-        rows = self.service.monthly_report(months=months)
+            year = timezone.localdate().year
+        rows = self.service.monthly_report(year=year)
         return Response(
             [
                 {
@@ -201,6 +202,9 @@ class FinanceMonthlyReportView(TenantContextAPIView):
                     "dues_paid_count": row["dues_paid_count"],
                     "dues_open_amount": row["dues_open_amount"],
                     "dues_open_count": row["dues_open_count"],
+                    "delinquency_rate": row["delinquency_rate"],
+                    "revenue_change_pct": row["revenue_change_pct"],
+                    "by_plan": row["by_plan"],
                 }
                 for row in rows
             ]
