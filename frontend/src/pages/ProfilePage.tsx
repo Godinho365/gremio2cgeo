@@ -1,5 +1,5 @@
-import { IconCash, IconLock, IconReceipt2, IconUser, IconWallet } from "@tabler/icons-react";
-import { useState } from "react";
+import { IconCash, IconLock, IconReceipt2, IconUser, IconUserPlus, IconWallet } from "@tabler/icons-react";
+import { useEffect, useState } from "react";
 
 import { useAuth } from "../auth/AuthContext";
 import { ORG_NAME } from "../branding";
@@ -16,11 +16,16 @@ import {
   FINANCIAL_STATUS_BADGE,
   FINANCIAL_STATUS_LABEL,
   PLAN_LABEL,
+  useGenerateInvite,
+  useInviteCandidates,
   useMyFinance,
   useSelfSubscribe,
+  type FinancialStatus,
   type PlanCode,
 } from "../features/finance/api";
 import { formatDateBr, maskCpf, maskPhone } from "../lib/masks";
+
+const _INVITE_BLOCKING_STATUSES: readonly FinancialStatus[] = ["overdue", "delinquent"];
 
 function apiMessage(err: unknown, fallback: string): string {
   const msg = (err as { response?: { data?: { error?: { message?: string } } } }).response?.data
@@ -418,6 +423,89 @@ function NoPlanCard() {
   );
 }
 
+/** Quem já é Associado Full em dia pode convidar um Cb/Sd EP pro Associado
+ * Full — não depende mais só do administrador gerar o convite. */
+function InviteAssociadoCard() {
+  const { data } = useMyFinance();
+  const podeConvidar =
+    !!data && data.plan === "associado" && !_INVITE_BLOCKING_STATUSES.includes(data.financial_status);
+
+  const [qInput, setQInput] = useState("");
+  const [q, setQ] = useState("");
+  const [link, setLink] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const generate = useGenerateInvite();
+  const { data: candidatos, isFetching } = useInviteCandidates(q);
+
+  useEffect(() => {
+    const t = setTimeout(() => setQ(qInput), 350);
+    return () => clearTimeout(t);
+  }, [qInput]);
+
+  if (!podeConvidar) return null;
+
+  async function convidar(candidatoId: string) {
+    setError(null);
+    try {
+      const invite = await generate.mutateAsync(candidatoId);
+      setLink(`${window.location.origin}/convite/associado/${invite.token}`);
+      setQInput("");
+      setQ("");
+    } catch (err) {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } }).response
+        ?.data?.error?.message;
+      setError(msg ?? "Não foi possível gerar o convite.");
+    }
+  }
+
+  return (
+    <div className="card mt-3">
+      <div className="card-header d-flex align-items-center gap-2">
+        <IconUserPlus size={20} />
+        <h3 className="card-title m-0">Convidar para o Associado Full</h3>
+      </div>
+      <div className="card-body">
+        {error && <div className="alert alert-danger">{error}</div>}
+        {link && (
+          <div className="alert alert-success">
+            Link gerado: <code>{link}</code>
+          </div>
+        )}
+        <p className="text-secondary">
+          Você é Associado Full em dia — pode convidar um Cabo ou Soldado EP
+          pra também assinar o Associado Full.
+        </p>
+        <input
+          className="form-control"
+          placeholder="Buscar pelo nome ou nome de guerra…"
+          value={qInput}
+          onChange={(e) => setQInput(e.target.value)}
+        />
+        {q.trim().length >= 2 && (
+          <div className="list-group mt-2">
+            {isFetching && <div className="list-group-item text-secondary">Buscando…</div>}
+            {!isFetching && (candidatos ?? []).length === 0 && (
+              <div className="list-group-item text-secondary">Nenhum candidato encontrado.</div>
+            )}
+            {(candidatos ?? []).map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                onClick={() => convidar(c.id)}
+                disabled={generate.isPending}
+              >
+                <span>{c.display_name}</span>
+                <span className="text-secondary small">{c.posto_graduacao}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const { user } = useAuth();
   if (!user) return null;
@@ -469,6 +557,7 @@ export default function ProfilePage() {
       <CreditCard />
       <FinanceCard />
       <NoPlanCard />
+      <InviteAssociadoCard />
 
       <div className="mt-3">
         <ProfileForm />

@@ -20,6 +20,7 @@ from apps.barbershop.api.views import AppointmentViewSet, BarberViewSet
 from apps.custody.api.views import CustodyViewSet
 from apps.finance.api.views import (
     AssociadoInviteAcceptView,
+    AssociadoInviteCandidatesView,
     AssociadoInviteListCreateView,
     BillingProfileViewSet,
     DueViewSet,
@@ -76,6 +77,11 @@ urlpatterns = [
         "finance/convites-associado",
         AssociadoInviteListCreateView.as_view(),
         name="associado_invites",
+    ),
+    path(
+        "finance/convites-associado/candidatos",
+        AssociadoInviteCandidatesView.as_view(),
+        name="associado_invite_candidates",
     ),
     path(
         "finance/convites-associado/<str:token>/aceitar",

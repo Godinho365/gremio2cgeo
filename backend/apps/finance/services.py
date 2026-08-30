@@ -9,10 +9,11 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.accounts.repositories import UserRepository
 from apps.accounts.services import UserService
 from apps.payments.models import Payment, PaymentStatus
 from apps.payments.repositories import PaymentRepository
@@ -72,6 +73,7 @@ class FinanceService(BaseService):
         invites: AssociadoInviteRepository | None = None,
         payment_gateway: PaymentService | None = None,
         users: UserService | None = None,
+        user_directory: UserRepository | None = None,
     ) -> None:
         self.profiles = profiles or FinanceRepository()
         self.dues = dues or DueRepository()
@@ -80,6 +82,7 @@ class FinanceService(BaseService):
         self.credits = credits or FinanceCreditRepository()
         self.payment_gateway = payment_gateway or PaymentService()
         self.users = users or UserService()
+        self.user_directory = user_directory or UserRepository()
 
     def _assert_eligible(self, user: User, plan: str) -> None:
         if plan not in eligible_plans_for(user.posto_graduacao):
@@ -230,6 +233,42 @@ class FinanceService(BaseService):
             actor_id=actor_id,
         )
         return invite
+
+    def search_associado_invite_candidates(self, *, query: str) -> list[User]:
+        """Candidatos a convite pro Associado Full: só Cb/Sd EP (únicos postos
+        elegíveis aos dois planos — ver eligible_plans_for) que ainda não
+        estão na relação financeira nem têm convite pendente válido.
+
+        Busca limitada de propósito (nome/nome de guerra/login, mínimo 2
+        caracteres): quem convida não é Admin e não pode enxergar o
+        cadastro completo da organização (isso é `/api/users`, admin-only).
+        """
+        query = query.strip()
+        if len(query) < 2:
+            return []
+        billed_ids = self.profiles.query().filter(is_active=True).values_list(
+            "user_id", flat=True
+        )
+        invited_ids = self.invites.pending().filter(
+            expires_at__gt=timezone.now()
+        ).values_list("user_id", flat=True)
+        candidates = (
+            self.user_directory.query()
+            .filter(is_active=True)
+            .exclude(pk__in=billed_ids)
+            .exclude(pk__in=invited_ids)
+            .filter(
+                Q(full_name__icontains=query)
+                | Q(nome_guerra__icontains=query)
+                | Q(username__icontains=query)
+            )
+            .order_by("nome_guerra", "username")
+        )
+        return [
+            u
+            for u in candidates
+            if eligible_plans_for(u.posto_graduacao) == frozenset({PlanCode.ASSOCIADO, PlanCode.BARBEARIA})
+        ][:20]
 
     def list_pending_associado_invites(self):
         return self.invites.pending()

@@ -134,6 +134,28 @@ export function usePendingInvites() {
   });
 }
 
+export interface InviteCandidate {
+  id: string;
+  display_name: string;
+  posto_graduacao: string;
+}
+
+/** Busca limitada de candidatos ao convite — quem convida sem ser Admin não
+ * enxerga o cadastro completo da organização (`/api/users` é admin-only). */
+export function useInviteCandidates(query: string) {
+  const q = query.trim();
+  return useQuery({
+    queryKey: ["finance", "invite-candidates", q],
+    queryFn: async () =>
+      (
+        await api.get<InviteCandidate[]>(
+          `/finance/convites-associado/candidatos?q=${encodeURIComponent(q)}`,
+        )
+      ).data,
+    enabled: q.length >= 2,
+  });
+}
+
 export function useGenerateInvite() {
   const qc = useQueryClient();
   return useMutation({

@@ -17,7 +17,7 @@ from core.viewsets import TenantContextAPIView, TenantScopedViewSet
 
 from apps.payments.api.serializers import PaymentSerializer
 
-from ..models import BillingProfile, Due, PlanCode
+from ..models import BillingProfile, Due, FinancialStatus, PlanCode
 from ..services import FinanceService
 from .serializers import (
     ActivateBillingSerializer,
@@ -32,6 +32,7 @@ from .serializers import (
 
 _READ_ROLES = (RoleCode.ADMIN, RoleCode.DIRECTOR, RoleCode.INVENTORY, RoleCode.AUDITOR)
 _MANAGE_ROLES = (RoleCode.ADMIN,)
+_INVITE_BLOCKING_STATUSES = (FinancialStatus.OVERDUE, FinancialStatus.DELINQUENT)
 
 
 def _can_read(user) -> bool:
@@ -40,6 +41,21 @@ def _can_read(user) -> bool:
 
 def _can_manage(user) -> bool:
     return user.is_superuser or user.roles.filter(code__in=_MANAGE_ROLES).exists()
+
+
+def _can_invite_associado(user, service: FinanceService) -> bool:
+    """Quem convida Cb/Sd EP pro Associado Full: Administrador, ou qualquer
+    Associado Full que esteja em dia (mesma régua de "em dia" já usada pra
+    reservar patrimônio e cortar pela assinatura da barbearia)."""
+    if _can_manage(user):
+        return True
+    profile = service.profiles.profile_for_user(user.pk)
+    return (
+        profile is not None
+        and profile.is_active
+        and profile.plan == PlanCode.ASSOCIADO
+        and profile.financial_status not in _INVITE_BLOCKING_STATUSES
+    )
 
 
 class BillingProfileViewSet(TenantScopedViewSet):
@@ -171,14 +187,45 @@ class AssociadoInviteListCreateView(TenantContextAPIView):
         return Response(AssociadoInviteSerializer(invites, many=True).data)
 
     def post(self, request: Request) -> Response:
-        if not _can_manage(request.user):
-            raise BusinessRuleError("Apenas Administrador gera convites.", code="forbidden")
+        if not _can_invite_associado(request.user, self.service):
+            raise BusinessRuleError(
+                "Apenas Administrador ou Associado Full em dia gera convites.",
+                code="forbidden",
+            )
         payload = GenerateInviteSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         invite = self.service.generate_associado_invite(
             user=payload.validated_data["user"], actor_id=str(request.user.pk)
         )
         return Response(AssociadoInviteSerializer(invite).data, status=201)
+
+
+class AssociadoInviteCandidatesView(TenantContextAPIView):
+    """Busca limitada pra quem convida sem ser Admin: só nome/posto de quem
+    já é candidato de verdade — não expõe o cadastro completo (`/api/users`
+    continua admin-only)."""
+
+    permission_classes = [IsAuthenticated]
+    service = FinanceService()
+
+    def get(self, request: Request) -> Response:
+        if not _can_invite_associado(request.user, self.service):
+            raise BusinessRuleError(
+                "Apenas Administrador ou Associado Full em dia busca candidatos.",
+                code="forbidden",
+            )
+        query = request.query_params.get("q", "")
+        candidates = self.service.search_associado_invite_candidates(query=query)
+        return Response(
+            [
+                {
+                    "id": str(u.id),
+                    "display_name": u.display_name,
+                    "posto_graduacao": u.posto_graduacao,
+                }
+                for u in candidates
+            ]
+        )
 
 
 class AssociadoInviteAcceptView(TenantContextAPIView):

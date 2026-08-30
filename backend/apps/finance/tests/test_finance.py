@@ -972,6 +972,122 @@ def test_generate_associado_invite_rejects_ineligible_rank(tenant_a):
             FinanceService().generate_associado_invite(user=soldado_ev)
 
 
+def test_associado_full_em_dia_can_generate_invite_without_being_admin(client: APIClient):
+    """Não precisa ser Admin: qualquer Associado Full em dia convida
+    outro Cb/Sd EP — regra pedida pelo usuário (convite vira "boca a boca"
+    entre quem já é associado)."""
+    tenant, admin = _org("finapi12b")
+    with use_tenant(tenant.id):
+        padrinho = UserService().create_user(
+            username="padrinho_convite", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant.id,
+        )
+        FinanceService().activate_billing(
+            user=padrinho, plan=PlanCode.ASSOCIADO,
+            due_day=timezone.localdate().day, started_period=_period(0),
+        )
+        cabo = UserService().create_user(
+            username="cabo_convidado_par", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant.id,
+        )
+    client.force_authenticate(padrinho)
+    resp = client.post("/api/finance/convites-associado", {"user": str(cabo.id)}, format="json")
+    assert resp.status_code == 201, resp.data
+
+
+def test_associado_full_barbearia_plan_cannot_generate_invite(client: APIClient):
+    """Assinatura Barbearia não é Associado Full — não dá o direito de convidar."""
+    tenant, admin = _org("finapi12c")
+    with use_tenant(tenant.id):
+        so_barbearia = UserService().create_user(
+            username="so_barbearia_convite", password="supersecret123",
+            posto_graduacao="Sd EV", tenant_id=tenant.id,
+        )
+        FinanceService().activate_billing(
+            user=so_barbearia, plan=PlanCode.BARBEARIA, due_day=10, started_period=_period(0),
+        )
+        cabo = UserService().create_user(
+            username="cabo_convidado_barb", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant.id,
+        )
+    client.force_authenticate(so_barbearia)
+    resp = client.post("/api/finance/convites-associado", {"user": str(cabo.id)}, format="json")
+    assert resp.status_code == 422, resp.data
+
+
+def test_delinquent_associado_full_cannot_generate_invite(client: APIClient):
+    from apps.finance.models import BillingProfile
+
+    tenant, admin = _org("finapi12d")
+    with use_tenant(tenant.id):
+        atrasado = UserService().create_user(
+            username="atrasado_convite", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant.id,
+        )
+        FinanceService().activate_billing(
+            user=atrasado, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0),
+        )
+        perfil = BillingProfile.objects.get(user=atrasado)
+        perfil.financial_status = FinancialStatus.DELINQUENT
+        perfil.save(update_fields=["financial_status"])
+        cabo = UserService().create_user(
+            username="cabo_convidado_atraso", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant.id,
+        )
+    client.force_authenticate(atrasado)
+    resp = client.post("/api/finance/convites-associado", {"user": str(cabo.id)}, format="json")
+    assert resp.status_code == 422, resp.data
+
+
+def test_associado_invite_candidates_search(client: APIClient):
+    """Busca de candidatos: só Cb/Sd EP, exclui quem já está na relação
+    financeira ou já tem convite pendente, exige pelo menos 2 caracteres,
+    e não é acessível a quem não pode convidar."""
+    tenant, admin = _org("finapi12e")
+    with use_tenant(tenant.id):
+        padrinho = UserService().create_user(
+            username="padrinho_busca", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant.id,
+        )
+        FinanceService().activate_billing(
+            user=padrinho, plan=PlanCode.ASSOCIADO,
+            due_day=timezone.localdate().day, started_period=_period(0),
+        )
+        UserService().create_user(
+            username="cabo_alvo_busca", password="supersecret123",
+            posto_graduacao="Cb", nome_guerra="ALVO", tenant_id=tenant.id,
+        )
+        ja_associado = UserService().create_user(
+            username="cabo_ja_associado_busca", password="supersecret123",
+            posto_graduacao="Cb", nome_guerra="ALVOJA", tenant_id=tenant.id,
+        )
+        FinanceService().activate_billing(
+            user=ja_associado, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0),
+        )
+        UserService().create_user(
+            username="coronel_alvo_busca", password="supersecret123",
+            posto_graduacao="Cel", nome_guerra="ALVOFORA", tenant_id=tenant.id,
+        )
+        estranho = UserService().create_user(
+            username="estranho_busca", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant.id,
+        )
+
+    client.force_authenticate(padrinho)
+    resp = client.get("/api/finance/convites-associado/candidatos?q=ALVO")
+    assert resp.status_code == 200, resp.data
+    nomes = [c["display_name"] for c in resp.data]
+    assert any("ALVO" in n for n in nomes)
+    assert not any("ALVOJA" in n for n in nomes)  # já é associado
+    assert not any("ALVOFORA" in n for n in nomes)  # não é Cb/Sd EP
+
+    assert client.get("/api/finance/convites-associado/candidatos?q=A").data == []
+
+    client.force_authenticate(estranho)
+    resp = client.get("/api/finance/convites-associado/candidatos?q=ALVO")
+    assert resp.status_code == 422, resp.data
+
+
 def test_accept_associado_invite_activates_the_associado_plan(tenant_a):
     with use_tenant(tenant_a.id):
         cabo = UserService().create_user(
