@@ -1024,3 +1024,42 @@ def test_accept_associado_invite_rejects_expired_token(tenant_a):
         invite.save(update_fields=["expires_at"])
         with pytest.raises(BusinessRuleError):
             FinanceService().accept_associado_invite(token=invite.token, actor=cabo)
+
+
+def test_self_subscribe_activates_barbearia_plan_for_eligible_user(client: APIClient):
+    tenant, admin = _org("finapi13")
+    with use_tenant(tenant.id):
+        cabo = UserService().create_user(
+            username="cabo_auto", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant.id,
+        )
+    client.force_authenticate(cabo)
+    resp = client.post("/api/finance/me/assinar")
+    assert resp.status_code == 201, resp.data
+    assert resp.data["plan"] == "barbearia"
+    assert resp.data["is_active"] is True
+
+
+def test_self_subscribe_rejects_ineligible_rank(client: APIClient):
+    tenant, admin = _org("finapi14")
+    with use_tenant(tenant.id):
+        coronel = UserService().create_user(
+            username="coronel_auto", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant.id,
+        )
+    client.force_authenticate(coronel)
+    resp = client.post("/api/finance/me/assinar")
+    assert resp.status_code == 422, resp.data
+
+
+def test_self_subscribe_rejects_when_already_active(client: APIClient):
+    tenant, admin = _org("finapi15")
+    with use_tenant(tenant.id):
+        cabo = UserService().create_user(
+            username="cabo_ja_ativo", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant.id,
+        )
+    client.force_authenticate(cabo)
+    client.post("/api/finance/me/assinar")
+    resp = client.post("/api/finance/me/assinar")
+    assert resp.status_code == 422, resp.data

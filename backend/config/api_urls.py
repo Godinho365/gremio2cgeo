@@ -25,6 +25,7 @@ from apps.finance.api.views import (
     DueViewSet,
     FinanceDashboardView,
     MyFinanceView,
+    SelfSubscribeView,
 )
 from apps.inventory.api.views import InventoryViewSet
 from apps.payments.api.views import (
@@ -62,6 +63,7 @@ urlpatterns = [
     path("credits", CreditView.as_view(), name="credits"),
     path("finance/dashboard", FinanceDashboardView.as_view(), name="finance_dashboard"),
     path("finance/me", MyFinanceView.as_view(), name="finance_me"),
+    path("finance/me/assinar", SelfSubscribeView.as_view(), name="finance_self_subscribe"),
     path(
         "finance/convites-associado",
         AssociadoInviteListCreateView.as_view(),

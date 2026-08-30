@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
 from rest_framework.exceptions import MethodNotAllowed
@@ -14,7 +15,7 @@ from apps.accounts.models import RoleCode
 from core.exceptions import BusinessRuleError
 from core.viewsets import TenantContextAPIView, TenantScopedViewSet
 
-from ..models import BillingProfile, Due
+from ..models import BillingProfile, Due, PlanCode
 from ..services import FinanceService
 from .serializers import (
     ActivateBillingSerializer,
@@ -197,3 +198,26 @@ class MyFinanceView(TenantContextAPIView):
         if profile is None or not profile.is_active:
             return Response(status=404)
         return Response(self.service.summary_for(profile))
+
+
+class SelfSubscribeView(TenantContextAPIView):
+    """Autoatendimento: o próprio usuário assina Mensalista Barbearia.
+
+    A elegibilidade (`_assert_eligible` dentro de `activate_billing`) já
+    recusa sozinha quem não é Cb/Sd EP/Sd EV — não precisa duplicar a
+    checagem aqui.
+    """
+
+    permission_classes = [IsAuthenticated]
+    service = FinanceService()
+
+    def post(self, request: Request) -> Response:
+        today = timezone.localdate()
+        profile = self.service.activate_billing(
+            user=request.user,
+            plan=PlanCode.BARBEARIA,
+            due_day=today.day,
+            started_period=today.replace(day=1),
+            actor_id=str(request.user.pk),
+        )
+        return Response(BillingProfileSerializer(profile).data, status=201)
