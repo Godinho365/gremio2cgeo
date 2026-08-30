@@ -1,9 +1,7 @@
 import {
   IconCalendarEvent,
   IconCheck,
-  IconCurrencyReal,
   IconScissors,
-  IconTicket,
   IconX,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -26,6 +24,7 @@ import {
   usePaymentConfig,
   useSlots,
 } from "../features/barbershop/api";
+import { useMyFinance } from "../features/finance/api";
 import { addDays, dateStr } from "../lib/dates";
 
 /** Agendamentos por página em "Meus horários". */
@@ -239,7 +238,6 @@ function RescheduleModal({
 export default function BarbershopPage() {
   const [dia, setDia] = useState(dateStr(new Date()));
   const [barbeiro, setBarbeiro] = useState<string | null>(null);
-  const [assinante, setAssinante] = useState<boolean | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [marcando, setMarcando] = useState<string | null>(null);
@@ -250,6 +248,12 @@ export default function BarbershopPage() {
 
   const barbers = useBarbers({ date: dia, onlyActive: true });
   const quota = useQuota(dia);
+  // Assinante ou avulso não é mais uma escolha da pessoa na hora de marcar —
+  // vem de ter (ou não) um plano ativo no Financeiro. O servidor recalcula
+  // isso de novo ao processar a marcação; isto aqui é só pra mostrar a
+  // situação certa na tela antes de clicar.
+  const minhaMensalidade = useMyFinance();
+  const souAssinante = !!minhaMensalidade.data;
   const cobranca = usePaymentConfig();
   const credito = useCredits();
   const book = useBook();
@@ -263,10 +267,10 @@ export default function BarbershopPage() {
     }
   }, [barbeiro, barbers.data]);
 
-  // Mudou dia, barbeiro ou tipo: o erro anterior não descreve mais a escolha.
+  // Mudou dia ou barbeiro: o erro anterior não descreve mais a escolha.
   useEffect(() => {
     setErroMarcacao(null);
-  }, [dia, barbeiro, assinante]);
+  }, [dia, barbeiro]);
 
   // O alerta empurra a grade para baixo e pode nascer fora da tela; sem isto a
   // pessoa clica no horário e tem a impressão de que nada aconteceu.
@@ -275,22 +279,18 @@ export default function BarbershopPage() {
     if (erroMarcacao) alertaRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [erroMarcacao]);
 
-  const semCota = assinante === true && quota.data?.remaining === 0;
+  const semCota = souAssinante && quota.data?.remaining === 0;
   // Crédito que cobre o corte inteiro dispensa o Pix (RN-BB9).
   const saldo = Number(credito.data?.balance ?? 0);
   const cobreComCredito = saldo >= Number(cobranca.data?.walk_in_price ?? Infinity);
 
   async function marcar(startAt: string) {
-    if (!barbeiro || assinante === null) return;
+    if (!barbeiro) return;
     setErroMarcacao(null);
     setAviso(null);
     setMarcando(startAt);
     try {
-      const feito = await book.mutateAsync({
-        barber: barbeiro,
-        start_at: startAt,
-        is_subscriber: assinante,
-      });
+      const feito = await book.mutateAsync({ barber: barbeiro, start_at: startAt });
       setPagina(1);
       if (feito.status === "awaiting_payment") {
         setPagando(feito);
@@ -403,58 +403,35 @@ export default function BarbershopPage() {
         </div>
       </section>
 
-      {/* Passo 3 — assinante ou avulso */}
+      {/* Passo 3 — sua situação (assinante ou avulso vem do Financeiro, não é escolha aqui) */}
       {barbeiro && (
         <section className="card mt-3">
           <div className="card-body">
             <div className="step-head">
               <span className="step-number">3</span>
               <div>
-                <div className="step-title">Você é assinante?</div>
+                <div className="step-title">
+                  {souAssinante ? "Você é assinante" : "Corte avulso"}
+                </div>
                 <div className="step-hint">
-                  Assinante tem {quota.data?.limit ?? 3} cortes por mês.
+                  {souAssinante
+                    ? quota.data
+                      ? `${quota.data.remaining} de ${quota.data.limit} cortes disponíveis neste mês`
+                      : "Carregando cota…"
+                    : cobranca.data?.pix_enabled === false && !cobreComCredito
+                      ? "Indisponível: o Pix ainda não foi configurado nesta instalação."
+                      : cobreComCredito
+                        ? `Você tem R$ ${brl(saldo)} de crédito — este corte sai sem pagar nada`
+                        : cobranca.data
+                          ? `R$ ${brl(cobranca.data.walk_in_price)} por Pix — o horário só é confirmado depois do pagamento`
+                          : "Pagamento por Pix"}
                 </div>
               </div>
-            </div>
-            <div className="plan-choice">
-              <button
-                type="button"
-                className={`plan-card${assinante === true ? " is-active" : ""}`}
-                onClick={() => setAssinante(true)}
-                aria-pressed={assinante === true}
-              >
-                <IconTicket size={22} />
-                <span className="plan-name">Sou assinante</span>
-                <span className="plan-detail">
-                  {quota.data
-                    ? `${quota.data.remaining} de ${quota.data.limit} cortes neste mês`
-                    : "Carregando cota…"}
-                </span>
-              </button>
-              <button
-                type="button"
-                className={`plan-card${assinante === false ? " is-active" : ""}`}
-                onClick={() => setAssinante(false)}
-                aria-pressed={assinante === false}
-                disabled={cobranca.data?.pix_enabled === false && !cobreComCredito}
-              >
-                <IconCurrencyReal size={22} />
-                <span className="plan-name">Corte avulso</span>
-                <span className="plan-detail">
-                  {cobranca.data?.pix_enabled === false && !cobreComCredito
-                    ? "Indisponível: o Pix ainda não foi configurado nesta instalação."
-                    : cobreComCredito
-                      ? `Você tem R$ ${brl(saldo)} de crédito — este corte sai sem pagar nada`
-                      : cobranca.data
-                        ? `R$ ${brl(cobranca.data.walk_in_price)} por Pix — o horário só é confirmado depois do pagamento`
-                        : "Pagamento por Pix"}
-                </span>
-              </button>
             </div>
             {semCota && (
               <div className="alert alert-warning mt-3 mb-0">
                 Você já usou os {quota.data?.limit} cortes de assinante deste mês. Dá para marcar
-                como avulso ou escolher um dia do mês que vem.
+                de novo a partir do mês que vem.
               </div>
             )}
           </div>
@@ -462,7 +439,7 @@ export default function BarbershopPage() {
       )}
 
       {/* Passo 4 — o horário */}
-      {barbeiro && assinante !== null && !semCota && (
+      {barbeiro && !semCota && (souAssinante || cobranca.data?.pix_enabled !== false || cobreComCredito) && (
         <section className="card mt-3">
           <div className="card-body">
             <div className="step-head">

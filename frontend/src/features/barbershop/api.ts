@@ -362,7 +362,6 @@ function invalidateBooking(qc: ReturnType<typeof useQueryClient>) {
 export interface BookInput {
   barber: string;
   start_at: string;
-  is_subscriber: boolean;
   notes?: string;
   customer?: string;
 }
