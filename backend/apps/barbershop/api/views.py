@@ -212,7 +212,6 @@ class AppointmentViewSet(TenantScopedViewSet):
             barber_id=payload.validated_data["barber"],
             customer_id=str(customer_id or request.user.pk),
             start_at=payload.validated_data["start_at"],
-            is_subscriber=payload.validated_data["is_subscriber"],
             notes=payload.validated_data.get("notes", ""),
             actor_id=str(request.user.pk),
         )

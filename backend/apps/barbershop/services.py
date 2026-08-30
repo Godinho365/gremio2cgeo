@@ -4,6 +4,8 @@ RN-BB1  Dois agendamentos ativos nunca se sobrepõem para o mesmo barbeiro.
 RN-BB2  Só dá para marcar num horário que existe na grade do barbeiro e fora de folga.
 RN-BB3  Não se marca no passado.
 RN-BB4  Assinante tem SUBSCRIBER_MONTHLY_LIMIT cortes por mês; cancelado devolve o corte.
+        Quem é assinante vem do Financeiro (BillingProfile ativo, qualquer
+        plano) — nunca do que o cliente manda na requisição.
 RN-BB5  Quem não é assinante paga o valor de WALK_IN_PRICE (.env), congelado
         no agendamento — mudar a tabela não altera o que já foi marcado.
 RN-BB6  Cliente remarca/cancela até CHANGE_CUTOFF_MINUTES antes da hora marcada.
@@ -25,6 +27,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.finance.repositories import FinanceRepository
 from apps.payments.credits import CreditService
 from apps.payments.models import CreditReason, Payment, PaymentStatus
 from apps.payments.services import PaymentService
@@ -70,6 +73,7 @@ class BarbershopService(BaseService):
         appointments: AppointmentRepository | None = None,
         payments: PaymentService | None = None,
         credits: CreditService | None = None,
+        finance_profiles: FinanceRepository | None = None,
     ) -> None:
         self.barbers = barbers or BarberRepository()
         self.schedules = schedules or BarberScheduleRepository()
@@ -77,6 +81,12 @@ class BarbershopService(BaseService):
         self.appointments = appointments or AppointmentRepository()
         self.payments = payments or PaymentService()
         self.credits = credits or CreditService()
+        self.finance_profiles = finance_profiles or FinanceRepository()
+
+    def _is_subscriber(self, customer_id: UUID | str) -> bool:
+        """Assinante = tem BillingProfile ativo no Financeiro, qualquer plano."""
+        profile = self.finance_profiles.profile_for_user(customer_id)
+        return profile is not None and profile.is_active
 
     # ── Cadastro do barbeiro ────────────────────────────────────────────────
 
@@ -486,7 +496,6 @@ class BarbershopService(BaseService):
         barber_id: UUID | str,
         customer_id: UUID | str,
         start_at: datetime,
-        is_subscriber: bool,
         notes: str = "",
         actor_id: UUID | str | None = None,
     ) -> Appointment:
@@ -500,6 +509,7 @@ class BarbershopService(BaseService):
                 "Não é possível marcar em um horário que já passou.", code="start_in_past"
             )
 
+        is_subscriber = self._is_subscriber(customer_id)
         end_at = self._slot_exists(barber_id=barber.id, start_at=start_at)  # RN-BB2
         if end_at is None:
             raise BusinessRuleError(

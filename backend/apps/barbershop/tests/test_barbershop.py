@@ -12,9 +12,27 @@ from apps.accounts.models import RoleCode
 from apps.accounts.services import OnboardingService, UserService
 from apps.barbershop.models import AppointmentStatus, Barber
 from apps.barbershop.services import BarbershopService
+from apps.finance.models import PlanCode
+from apps.finance.services import FinanceService
 from core.context import use_tenant
 
 pytestmark = pytest.mark.django_db
+
+
+def _make_subscriber(tenant, user):
+    """Dá ao usuário um BillingProfile ativo — é isso que faz o service tratar
+    a pessoa como assinante na Barbearia (nunca mais um campo confiado do
+    cliente)."""
+    with use_tenant(tenant.id):
+        if not user.posto_graduacao:
+            user.posto_graduacao = "Cel"
+            user.save(update_fields=["posto_graduacao"])
+        FinanceService().activate_billing(
+            user=user,
+            plan=PlanCode.ASSOCIADO,
+            due_day=timezone.localdate().day,
+            started_period=timezone.localdate().replace(day=1),
+        )
 
 
 def _org(name: str):
@@ -130,7 +148,7 @@ def test_booking_takes_the_slot_out_of_the_list(client: APIClient):
 
     resp = client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": False},
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
         format="json",
     )
     assert resp.status_code == 201, resp.data
@@ -151,7 +169,7 @@ def test_two_people_cannot_take_the_same_slot(client: APIClient):
             role_codes=[RoleCode.USER], tenant_id=tenant.id,
             email="cabo_silva@example.com",
         )
-    body = {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": False}
+    body = {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()}
 
     client.force_authenticate(admin)
     assert client.post("/api/appointments", body, format="json").status_code == 201
@@ -174,7 +192,6 @@ def test_cannot_book_a_time_the_barber_does_not_offer(client: APIClient):
             {
                 "barber": str(barber.id),
                 "start_at": _at(day, hora, minuto).isoformat(),
-                "is_subscriber": False,
             },
             format="json",
         )
@@ -192,7 +209,6 @@ def test_cannot_book_in_the_past(client: APIClient):
         {
             "barber": str(barber.id),
             "start_at": _at(timezone.localdate() - timedelta(days=7), 9).isoformat(),
-            "is_subscriber": False,
         },
         format="json",
     )
@@ -207,92 +223,88 @@ def test_walk_in_pays_and_subscriber_does_not(client: APIClient):
     tenant, admin = _org("bb9")
     day = _next_weekday(2)
     barber = _barber_with_grid(tenant, admin, weekday=2)
-    client.force_authenticate(admin)
+    assinante_user = _payer(tenant, "sd_bb9_assinante")
+    _make_subscriber(tenant, assinante_user)
 
+    client.force_authenticate(admin)
     avulso = client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": False},
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
         format="json",
     )
+
+    client.force_authenticate(assinante_user)
     assinante = client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9, 30).isoformat(), "is_subscriber": True},
+        {"barber": str(barber.id), "start_at": _at(day, 9, 30).isoformat()},
         format="json",
     )
     assert Decimal(avulso.data["price"]) == Decimal("15.00")
     assert Decimal(assinante.data["price"]) == Decimal("0.00")
 
 
-def test_subscriber_is_limited_to_three_cuts_per_month(client: APIClient):
+def test_subscriber_is_limited_to_four_cuts_per_month(client: APIClient):
+    """Grade de 9h às 11h30 (5 slots de 30min) — precisa de um 5º horário
+    válido pra isolar "cota estourada" de "horário não oferecido"."""
     tenant, admin = _org("bb10")
     day = _next_weekday(2)
-    barber = _barber_with_grid(tenant, admin, weekday=2)
+    with use_tenant(tenant.id):
+        service = BarbershopService()
+        barber = service.create_barber(name="Zé da Navalha", actor_id=str(admin.pk))
+        service.set_schedule(
+            barber_id=barber.id,
+            windows=[
+                {"weekday": 2, "start_time": time(9, 0), "end_time": time(11, 30),
+                 "slot_minutes": 30}
+            ],
+            actor_id=str(admin.pk),
+        )
+    _make_subscriber(tenant, admin)
     client.force_authenticate(admin)
 
-    for minuto in (0, 30):
+    for hora, minuto in ((9, 0), (9, 30), (10, 0), (10, 30)):
         resp = client.post(
             "/api/appointments",
-            {
-                "barber": str(barber.id),
-                "start_at": _at(day, 9, minuto).isoformat(),
-                "is_subscriber": True,
-            },
+            {"barber": str(barber.id), "start_at": _at(day, hora, minuto).isoformat()},
             format="json",
         )
         assert resp.status_code == 201, resp.data
-    terceiro = client.post(
-        "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 10).isoformat(), "is_subscriber": True},
-        format="json",
-    )
-    assert terceiro.status_code == 201
 
     cota = client.get(f"/api/appointments/cota?date={day:%Y-%m-%d}")
-    assert cota.data == {"limit": 3, "used": 3, "remaining": 0}
+    assert cota.data == {"limit": 4, "used": 4, "remaining": 0}
 
-    quarto = client.post(
+    quinto = client.post(
         "/api/appointments",
-        {
-            "barber": str(barber.id),
-            "start_at": _at(day, 10, 30).isoformat(),
-            "is_subscriber": True,
-        },
+        {"barber": str(barber.id), "start_at": _at(day, 11, 0).isoformat()},
         format="json",
     )
-    assert quarto.status_code == 422
-    assert quarto.data["error"]["code"] == "subscriber_quota_exceeded"
+    assert quinto.status_code == 422
+    assert quinto.data["error"]["code"] == "subscriber_quota_exceeded"
 
 
 def test_cancelling_gives_the_subscriber_cut_back(client: APIClient):
     tenant, admin = _org("bb11")
     day = _next_weekday(2)
     barber = _barber_with_grid(tenant, admin, weekday=2)
+    _make_subscriber(tenant, admin)
     client.force_authenticate(admin)
 
     marcados = []
     for hora, minuto in ((9, 0), (9, 30), (10, 0)):
         resp = client.post(
             "/api/appointments",
-            {
-                "barber": str(barber.id),
-                "start_at": _at(day, hora, minuto).isoformat(),
-                "is_subscriber": True,
-            },
+            {"barber": str(barber.id), "start_at": _at(day, hora, minuto).isoformat()},
             format="json",
         )
         marcados.append(resp.data["id"])
 
     assert client.post(f"/api/appointments/{marcados[0]}/cancelar").status_code == 200
     cota = client.get(f"/api/appointments/cota?date={day:%Y-%m-%d}")
-    assert cota.data["remaining"] == 1
+    assert cota.data["remaining"] == 2
 
     de_novo = client.post(
         "/api/appointments",
-        {
-            "barber": str(barber.id),
-            "start_at": _at(day, 10, 30).isoformat(),
-            "is_subscriber": True,
-        },
+        {"barber": str(barber.id), "start_at": _at(day, 10, 30).isoformat()},
         format="json",
     )
     assert de_novo.status_code == 201, de_novo.data
@@ -309,7 +321,7 @@ def test_reschedule_moves_the_appointment_and_frees_the_old_slot(client: APIClie
 
     marcado = client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": False},
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
         format="json",
     ).data
 
@@ -334,12 +346,12 @@ def test_reschedule_into_a_taken_slot_conflicts(client: APIClient):
 
     primeiro = client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": False},
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
         format="json",
     ).data
     client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9, 30).isoformat(), "is_subscriber": False},
+        {"barber": str(barber.id), "start_at": _at(day, 9, 30).isoformat()},
         format="json",
     )
     conflito = client.post(
@@ -369,7 +381,7 @@ def test_someone_else_cannot_cancel_your_appointment(client: APIClient):
     client.force_authenticate(dono)
     marcado = client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": False},
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
         format="json",
     ).data
 
@@ -394,13 +406,13 @@ def test_customer_only_sees_their_own_appointments(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": False},
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
         format="json",
     )
     client.force_authenticate(outro)
     client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9, 30).isoformat(), "is_subscriber": False},
+        {"barber": str(barber.id), "start_at": _at(day, 9, 30).isoformat()},
         format="json",
     )
 
@@ -454,7 +466,7 @@ def test_cannot_delete_a_barber_with_appointments_ahead(client: APIClient):
     client.force_authenticate(admin)
     marcado = client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": False},
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
         format="json",
     ).data
 
@@ -494,10 +506,11 @@ def test_finishing_is_management_only(client: APIClient):
             role_codes=[RoleCode.USER], tenant_id=tenant.id,
             email="sd_alves@example.com",
         )
+    _make_subscriber(tenant, cliente)
     client.force_authenticate(cliente)
     marcado = client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": True},
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
         format="json",
     ).data
     assert client.post(f"/api/appointments/{marcado['id']}/concluir").status_code == 422
@@ -641,7 +654,7 @@ def test_an_appointment_that_ran_its_course_counts_as_one_cut(client: APIClient)
     client.force_authenticate(cliente)
 
     cota = client.get(f"/api/appointments/cota?date={timezone.localdate():%Y-%m-%d}")
-    assert cota.data == {"limit": 3, "used": 1, "remaining": 2}
+    assert cota.data == {"limit": 4, "used": 1, "remaining": 3}
     assert client.get("/api/appointments").data["results"][0]["status"] == (
         AppointmentStatus.COMPLETED
     )
@@ -701,7 +714,7 @@ def test_walk_in_is_born_awaiting_payment_with_a_qr_code():
     with use_tenant(tenant.id):
         ag = service.book(
             barber_id=barber.id, customer_id=cliente.pk,
-            start_at=_at(day, 9), is_subscriber=False,
+            start_at=_at(day, 9),
         )
 
     assert ag.status == AppointmentStatus.AWAITING_PAYMENT
@@ -715,12 +728,13 @@ def test_subscriber_does_not_generate_a_charge():
     day = _next_weekday(2)
     barber = _barber_with_grid(tenant, admin, weekday=2)
     cliente = _payer(tenant, "sd_pix2")
+    _make_subscriber(tenant, cliente)
     service, provedor = _service_with_fake_gateway()
 
     with use_tenant(tenant.id):
         ag = service.book(
             barber_id=barber.id, customer_id=cliente.pk,
-            start_at=_at(day, 9), is_subscriber=True,
+            start_at=_at(day, 9),
         )
 
     assert ag.status == AppointmentStatus.SCHEDULED
@@ -736,14 +750,14 @@ def test_unpaid_slot_is_held_so_nobody_else_takes_it():
 
     with use_tenant(tenant.id):
         service.book(barber_id=barber.id, customer_id=um.pk,
-                     start_at=_at(day, 9), is_subscriber=False)
+                     start_at=_at(day, 9))
         livres = service.available_slots(barber_id=barber.id, day=day)
         assert _at(day, 9) not in [s["start_at"] for s in livres]
 
         from core.exceptions import ConflictError
         with pytest.raises(ConflictError):
             service.book(barber_id=barber.id, customer_id=outro.pk,
-                         start_at=_at(day, 9), is_subscriber=False)
+                         start_at=_at(day, 9))
 
 
 def test_paying_turns_the_appointment_into_scheduled():
@@ -755,7 +769,7 @@ def test_paying_turns_the_appointment_into_scheduled():
 
     with use_tenant(tenant.id):
         ag = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                          start_at=_at(day, 9), is_subscriber=False)
+                          start_at=_at(day, 9))
         provedor["value"] = "approved"
         atualizado = service.refresh_payment(ag)
 
@@ -773,7 +787,7 @@ def test_an_expired_pix_frees_the_slot():
 
     with use_tenant(tenant.id):
         ag = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                          start_at=_at(day, 9), is_subscriber=False)
+                          start_at=_at(day, 9))
         ag.payment.expires_at = timezone.now() - timedelta(minutes=1)
         ag.payment.save(update_fields=["expires_at"])
 
@@ -794,12 +808,12 @@ def test_someone_else_can_book_the_slot_after_the_pix_expires():
 
     with use_tenant(tenant.id):
         primeiro = service.book(barber_id=barber.id, customer_id=um.pk,
-                                start_at=_at(day, 9), is_subscriber=False)
+                                start_at=_at(day, 9))
         primeiro.payment.expires_at = timezone.now() - timedelta(minutes=1)
         primeiro.payment.save(update_fields=["expires_at"])
 
         segundo = service.book(barber_id=barber.id, customer_id=outro.pk,
-                               start_at=_at(day, 9), is_subscriber=False)
+                               start_at=_at(day, 9))
 
     assert segundo.status == AppointmentStatus.AWAITING_PAYMENT
     primeiro.refresh_from_db()
@@ -814,7 +828,7 @@ def test_an_unpaid_appointment_can_be_cancelled_by_its_owner(client: APIClient):
     service, _ = _service_with_fake_gateway()
     with use_tenant(tenant.id):
         ag = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                          start_at=_at(day, 9), is_subscriber=False)
+                          start_at=_at(day, 9))
 
     client.force_authenticate(cliente)
     assert client.post(f"/api/appointments/{ag.id}/cancelar").status_code == 200
@@ -830,7 +844,7 @@ def test_the_api_hands_the_qr_code_to_the_screen(client: APIClient):
     client.force_authenticate(cliente)
     resp = client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": False},
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
         format="json",
     )
     assert resp.status_code == 201, resp.data
@@ -851,7 +865,7 @@ def test_booking_fails_clearly_when_pix_is_not_configured(client: APIClient):
     client.force_authenticate(cliente)
     resp = client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": False},
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
         format="json",
     )
     assert resp.status_code == 422
@@ -868,7 +882,7 @@ def test_giving_up_the_slot_also_closes_the_pix_charge():
 
     with use_tenant(tenant.id):
         ag = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                          start_at=_at(day, 9), is_subscriber=False)
+                          start_at=_at(day, 9))
         service.cancel(appointment_id=ag.id, actor_id=str(cliente.pk))
         ag.refresh_from_db()
         ag.payment.refresh_from_db()
@@ -888,14 +902,14 @@ def test_walk_in_price_comes_from_the_setting(settings):
     settings.WALK_IN_PRICE = "1.00"
     with use_tenant(tenant.id):
         barato = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                              start_at=_at(day, 9), is_subscriber=False)
+                              start_at=_at(day, 9))
     assert barato.price == Decimal("1.00")
     assert barato.payment.amount == Decimal("1.00")
 
     settings.WALK_IN_PRICE = "15.00"
     with use_tenant(tenant.id):
         cheio = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                             start_at=_at(day, 9, 30), is_subscriber=False)
+                             start_at=_at(day, 9, 30))
     assert cheio.price == Decimal("15.00")
 
     # O que já foi marcado mantém o preço do momento da marcação.
@@ -925,7 +939,7 @@ def _saldo(tenant, user) -> Decimal:
 
 def _marca_e_paga(service, provedor, barber, cliente, quando):
     ag = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                      start_at=quando, is_subscriber=False)
+                      start_at=quando)
     provedor["value"] = "approved"
     ag = service.refresh_payment(ag)
     provedor["value"] = "pending"
@@ -964,7 +978,7 @@ def test_credit_pays_the_next_haircut_without_pix():
         service.cancel(appointment_id=primeiro.id, actor_id=str(cliente.pk))
 
         segundo = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                               start_at=_at(day, 9, 30), is_subscriber=False)
+                               start_at=_at(day, 9, 30))
 
     # Já nasce confirmado: não passou pelo Pix.
     assert segundo.status == AppointmentStatus.SCHEDULED
@@ -984,7 +998,7 @@ def test_cancelling_a_credit_paid_appointment_gives_the_credit_back():
         primeiro = _marca_e_paga(service, provedor, barber, cliente, _at(day, 9))
         service.cancel(appointment_id=primeiro.id, actor_id=str(cliente.pk))
         segundo = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                               start_at=_at(day, 9, 30), is_subscriber=False)
+                               start_at=_at(day, 9, 30))
         assert _saldo(tenant, cliente) == Decimal("0.00")
 
         service.cancel(appointment_id=segundo.id, actor_id=str(cliente.pk))
@@ -1006,12 +1020,12 @@ def test_credit_is_not_spent_twice_on_the_same_balance():
         assert _saldo(tenant, cliente) == Decimal("15.00")
 
         com_credito = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                                   start_at=_at(day, 9, 30), is_subscriber=False)
+                                   start_at=_at(day, 9, 30))
         assert com_credito.paid_with_credit is True
 
         # Sem saldo, o próximo volta a exigir Pix.
         terceiro = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                                start_at=_at(day, 10), is_subscriber=False)
+                                start_at=_at(day, 10))
 
     assert terceiro.paid_with_credit is False
     assert terceiro.status == AppointmentStatus.AWAITING_PAYMENT
@@ -1029,7 +1043,7 @@ def test_an_unpaid_pix_never_becomes_credit():
 
     with use_tenant(tenant.id):
         ag = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                          start_at=_at(day, 9), is_subscriber=False)
+                          start_at=_at(day, 9))
         service.cancel(appointment_id=ag.id, actor_id=str(cliente.pk))
 
     assert _saldo(tenant, cliente) == Decimal("0.00")
@@ -1040,11 +1054,12 @@ def test_subscriber_cancellation_creates_no_credit():
     day = _next_weekday(2)
     barber = _barber_with_grid(tenant, admin, weekday=2)
     cliente = _payer(tenant, "sd_cred6")
+    _make_subscriber(tenant, cliente)
     service, _ = _service_with_fake_gateway()
 
     with use_tenant(tenant.id):
         ag = service.book(barber_id=barber.id, customer_id=cliente.pk,
-                          start_at=_at(day, 9), is_subscriber=True)
+                          start_at=_at(day, 9))
         service.cancel(appointment_id=ag.id, actor_id=str(cliente.pk))
 
     assert _saldo(tenant, cliente) == Decimal("0.00")
@@ -1061,7 +1076,7 @@ def test_the_statement_shows_where_the_credit_came_from(client: APIClient):
         ag = _marca_e_paga(service, provedor, barber, cliente, _at(day, 9))
         service.cancel(appointment_id=ag.id, actor_id=str(cliente.pk))
         service.book(barber_id=barber.id, customer_id=cliente.pk,
-                     start_at=_at(day, 9, 30), is_subscriber=False)
+                     start_at=_at(day, 9, 30))
 
     client.force_authenticate(cliente)
     extrato = client.get("/api/credits")
@@ -1262,7 +1277,7 @@ def test_barbershop_client_can_still_book_a_haircut(client: APIClient):
     client.force_authenticate(cliente)
     resp = client.post(
         "/api/appointments",
-        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat(), "is_subscriber": False},
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
         format="json",
     )
     assert resp.status_code == 201, resp.data

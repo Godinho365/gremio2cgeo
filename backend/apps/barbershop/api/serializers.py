@@ -161,7 +161,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
 class AppointmentCreateSerializer(serializers.Serializer):
     barber = serializers.UUIDField()
     start_at = serializers.DateTimeField()
-    is_subscriber = serializers.BooleanField()
+    # is_subscriber não vem daqui de propósito — o service calcula sozinho,
+    # a partir do Financeiro, pra ninguém conseguir marcar de graça mentindo.
     notes = serializers.CharField(required=False, allow_blank=True)
     # Só a administração da barbearia pode marcar em nome de outra pessoa.
     customer = serializers.UUIDField(required=False, allow_null=True)
