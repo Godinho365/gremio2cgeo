@@ -113,7 +113,6 @@ export function useBillingProfiles() {
 export interface ActivateBillingPayload {
   user: string;
   plan: PlanCode;
-  due_day: number;
   started_period: string;
 }
 
@@ -214,15 +213,6 @@ export function useFinancePixStatus(paymentId: string | null, active: boolean) {
     refetchInterval: active ? 5_000 : false,
     refetchIntervalInBackground: true,
     queryFn: async () => (await api.get<Payment>(`/finance/me/pagamento/${paymentId}`)).data,
-  });
-}
-
-export function useUpdateDueDay() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, due_day }: { id: string; due_day: number }) =>
-      (await api.patch<BillingProfile>(`/billing-profiles/${id}`, { due_day })).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["finance"] }),
   });
 }
 

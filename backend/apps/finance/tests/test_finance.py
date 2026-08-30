@@ -90,7 +90,7 @@ def test_billing_profile_and_due_models_exist(tenant_a):
         )
         profile = BillingProfile.objects.create(
             tenant_id=tenant_a.id, user=user, plan=PlanCode.ASSOCIADO,
-            due_day=10, started_period=_period(0),
+            started_period=_period(0),
         )
         due = Due.objects.create(
             tenant_id=tenant_a.id, billing_profile=profile, period=_period(0),
@@ -140,7 +140,7 @@ def test_activate_billing_generates_current_and_two_months_ahead(tenant_a):
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
         profile = FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0),
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0),
         )
         periods = list(
             Due.objects.filter(billing_profile=profile).order_by("period").values_list(
@@ -158,7 +158,7 @@ def test_activate_billing_refuses_plan_not_eligible_for_rank(tenant_a):
         )
         with pytest.raises(BusinessRuleError):
             FinanceService().activate_billing(
-                user=coronel, plan=PlanCode.BARBEARIA, due_day=10, started_period=_period(0)
+                user=coronel, plan=PlanCode.BARBEARIA, started_period=_period(0)
             )
 
 
@@ -169,7 +169,7 @@ def test_activate_billing_accepts_barbearia_plan_for_sd_ev(tenant_a):
             posto_graduacao="Sd EV", tenant_id=tenant_a.id,
         )
         profile = FinanceService().activate_billing(
-            user=soldado_ev, plan=PlanCode.BARBEARIA, due_day=10, started_period=_period(0)
+            user=soldado_ev, plan=PlanCode.BARBEARIA, started_period=_period(0)
         )
     assert profile.plan == PlanCode.BARBEARIA
 
@@ -182,7 +182,7 @@ def test_activate_billing_refuses_unclassified_legacy_sd(tenant_a):
         )
         with pytest.raises(BusinessRuleError):
             FinanceService().activate_billing(
-                user=legado, plan=PlanCode.BARBEARIA, due_day=10, started_period=_period(0)
+                user=legado, plan=PlanCode.BARBEARIA, started_period=_period(0)
             )
 
 
@@ -192,10 +192,10 @@ def test_activate_billing_twice_is_rejected(tenant_a):
             username="membro3", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0))
         with pytest.raises(BusinessRuleError):
             FinanceService().activate_billing(
-                user=user, plan=PlanCode.ASSOCIADO, due_day=15, started_period=_period(0)
+                user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
             )
 
 
@@ -206,7 +206,7 @@ def test_register_payment_allocates_across_periods_advance_example(tenant_a):
             username="membro4", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0))
         paid_at = _dt(0)
         settled = FinanceService().register_payment(
             user=user, amount=Decimal("500.00"), method="dinheiro", paid_at=paid_at,
@@ -228,7 +228,7 @@ def test_register_payment_extends_window_beyond_two_months(tenant_a):
             username="membro5", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0))
         paid_at = _dt(0)
         settled = FinanceService().register_payment(
             user=user, amount=Decimal("600.00"), method="dinheiro", paid_at=paid_at,
@@ -244,7 +244,7 @@ def test_register_payment_remainder_becomes_credit(tenant_a):
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
         profile = FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
         paid_at = _dt(0)
         settled = FinanceService().register_payment(
@@ -263,7 +263,7 @@ def test_register_payment_rejects_zero_or_negative(tenant_a):
             username="membro7", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0))
         with pytest.raises(BusinessRuleError):
             FinanceService().register_payment(
                 user=user, amount=Decimal("0"), method="dinheiro", paid_at=timezone.now()
@@ -276,7 +276,7 @@ def test_cancel_payment_reopens_every_due_it_settled(tenant_a):
             username="membro8", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0))
         paid_at = _dt(0)
         settled = FinanceService().register_payment(
             user=user, amount=Decimal("300.00"), method="dinheiro", paid_at=paid_at,
@@ -296,7 +296,7 @@ def test_cancel_payment_reverses_the_overpayment_credit(tenant_a):
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
         profile = FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
         paid_at = _dt(0)
         settled = FinanceService().register_payment(
@@ -315,7 +315,7 @@ def test_cancel_payment_on_unpaid_due_is_rejected(tenant_a):
             username="membro10", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0))
         unpaid = Due.objects.filter(billing_profile__user=user).first()
         with pytest.raises(BusinessRuleError):
             FinanceService().cancel_payment(due_id=unpaid.id)
@@ -327,7 +327,7 @@ def test_roll_all_recomputes_status_by_date(tenant_a):
             username="membro11", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(-2))
+        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, started_period=_period(-2))
         FinanceService().roll_all()
         first_due = Due.objects.filter(billing_profile__user=user).order_by("period").first()
     # Início 2 meses atrás: o primeiro período está bem além dos 15 dias de tolerância.
@@ -341,7 +341,7 @@ def test_roll_all_keeps_billing_active_for_praca_ranks(tenant_a):
             posto_graduacao="Cb", tenant_id=tenant_a.id,
         )
         profile = FinanceService().activate_billing(
-            user=user, plan=PlanCode.BARBEARIA, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.BARBEARIA, started_period=_period(0)
         )
         FinanceService().roll_all()
         profile.refresh_from_db()
@@ -355,7 +355,7 @@ def test_roll_all_consumes_accumulated_credit(tenant_a):
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
         profile = FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
         paid_at = _dt(0)
         # Dois pagamentos de resto que juntos fecham uma mensalidade inteira.
@@ -380,13 +380,13 @@ def test_roll_dues_task_runs_for_all_tenants(tenant_a, tenant_b):
             username="membroA", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=user_a, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=user_a, plan=PlanCode.ASSOCIADO, started_period=_period(0))
     with use_tenant(tenant_b.id):
         user_b = UserService().create_user(
             username="membroB", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_b.id,
         )
-        FinanceService().activate_billing(user=user_b, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=user_b, plan=PlanCode.ASSOCIADO, started_period=_period(0))
 
     processed = roll_dues()
     assert processed == 2
@@ -399,7 +399,7 @@ def test_summary_for_reports_the_fields_from_the_spec(tenant_a):
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
         profile = FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
         paid_at = _dt(0)
         FinanceService().register_payment(
@@ -430,9 +430,9 @@ def test_dashboard_counts_active_profiles_by_financial_status(tenant_a):
             username="membro16", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=em_dia, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=em_dia, plan=PlanCode.ASSOCIADO, started_period=_period(0))
         FinanceService().activate_billing(
-            user=atrasado, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(-2)
+            user=atrasado, plan=PlanCode.ASSOCIADO, started_period=_period(-2)
         )
         FinanceService().roll_all()
         data = FinanceService().dashboard()
@@ -467,11 +467,11 @@ def test_monthly_report_computes_dues_for_current_month(tenant_a):
         )
         FinanceService().activate_billing(
             user=pago, plan=PlanCode.ASSOCIADO,
-            due_day=timezone.localdate().day, started_period=_period(0),
+            started_period=_period(0),
         )
         FinanceService().activate_billing(
             user=aberto, plan=PlanCode.ASSOCIADO,
-            due_day=timezone.localdate().day, started_period=_period(0),
+            started_period=_period(0),
         )
         FinanceService().register_payment(
             user=pago, amount=Decimal("100.00"), method="pix", paid_at=timezone.now(),
@@ -498,7 +498,7 @@ def test_monthly_report_attributes_late_payment_to_the_original_month():
         )
         FinanceService().activate_billing(
             user=atrasado, plan=PlanCode.ASSOCIADO,
-            due_day=timezone.localdate().day, started_period=_period(-1),
+            started_period=_period(-1),
         )
         # Paga a mensalidade do mês passado hoje (atrasada) — não a do mês atual.
         FinanceService().register_payment(
@@ -530,15 +530,15 @@ def test_monthly_report_computes_revenue_change_pct(tenant_a):
         )
         FinanceService().activate_billing(
             user=m1, plan=PlanCode.ASSOCIADO,
-            due_day=timezone.localdate().day, started_period=_period(-1),
+            started_period=_period(-1),
         )
         FinanceService().activate_billing(
             user=m2a, plan=PlanCode.ASSOCIADO,
-            due_day=timezone.localdate().day, started_period=_period(0),
+            started_period=_period(0),
         )
         FinanceService().activate_billing(
             user=m2b, plan=PlanCode.ASSOCIADO,
-            due_day=timezone.localdate().day, started_period=_period(0),
+            started_period=_period(0),
         )
         FinanceService().register_payment(
             user=m1, amount=Decimal("100.00"), method="pix", paid_at=timezone.now(),
@@ -566,11 +566,11 @@ def test_monthly_report_breaks_down_by_plan(tenant_a):
         )
         FinanceService().activate_billing(
             user=associado, plan=PlanCode.ASSOCIADO,
-            due_day=timezone.localdate().day, started_period=_period(0),
+            started_period=_period(0),
         )
         FinanceService().activate_billing(
             user=cb, plan=PlanCode.BARBEARIA,
-            due_day=timezone.localdate().day, started_period=_period(0),
+            started_period=_period(0),
         )
         FinanceService().register_payment(
             user=associado, amount=Decimal("100.00"), method="pix", paid_at=timezone.now(),
@@ -594,7 +594,7 @@ def test_monthly_report_ignores_dues_outside_the_period_regardless_of_active_sta
         )
         FinanceService().activate_billing(
             user=membro, plan=PlanCode.ASSOCIADO,
-            due_day=timezone.localdate().day, started_period=_period(0),
+            started_period=_period(0),
         )
         from apps.finance.models import BillingProfile
 
@@ -617,7 +617,7 @@ def test_activate_billing_via_api_requires_admin(client: APIClient):
     client.force_authenticate(plain)
     resp = client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
     assert resp.status_code == 422, resp.data
@@ -625,11 +625,11 @@ def test_activate_billing_via_api_requires_admin(client: APIClient):
     client.force_authenticate(admin)
     resp = client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
     assert resp.status_code == 201, resp.data
-    assert resp.data["due_day"] == 10
+    assert resp.data["due_day"] == 5
 
 
 def test_list_billing_profiles_requires_staff_read(client: APIClient):
@@ -660,7 +660,7 @@ def test_deactivate_billing_via_api(client: APIClient):
     client.force_authenticate(admin)
     created = client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
     resp = client.post(f"/api/billing-profiles/{created.data['id']}/desativar")
@@ -668,43 +668,28 @@ def test_deactivate_billing_via_api(client: APIClient):
     assert resp.data["is_active"] is False
 
 
-def test_update_due_day_via_api_requires_admin(client: APIClient):
-    """`_can_manage` (não `_can_read`) tem que barrar o PATCH — por isso o
-    usuário rejeitado aqui é `DIRECTOR` (tem leitura financeira via
-    `_READ_ROLES`, mas não é `ADMIN`), não um usuário sem papel nenhum: um
-    `RoleCode.USER` puro já cairia em `get_object()` → `_can_read` antes de
-    chegar no `_can_manage`, mascarando uma eventual regressão nesse guard
-    específico."""
+def test_billing_profile_due_day_cannot_be_changed_via_api(client: APIClient):
+    """Vencimento é travado (dia 5 pra todo mundo) — nem o admin consegue
+    editar por API. PATCH nem existe mais nesse endpoint."""
     tenant, admin = _org("finapi4")
     with use_tenant(tenant.id):
         member = UserService().create_user(
             username="membro_api4", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant.id,
         )
-        director = UserService().create_user(
-            username="director_fin4", password="supersecret123",
-            role_codes=[RoleCode.DIRECTOR], tenant_id=tenant.id,
-        )
     client.force_authenticate(admin)
     created = client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
+    assert created.data["due_day"] == 5
     profile_id = created.data["id"]
 
-    client.force_authenticate(director)
     resp = client.patch(
         f"/api/billing-profiles/{profile_id}", {"due_day": 15}, format="json"
     )
-    assert resp.status_code == 422, resp.data
-
-    client.force_authenticate(admin)
-    resp = client.patch(
-        f"/api/billing-profiles/{profile_id}", {"due_day": 15}, format="json"
-    )
-    assert resp.status_code == 200, resp.data
-    assert resp.data["due_day"] == 15
+    assert resp.status_code == 405, resp.data
 
 
 def test_registrar_pagamento_via_api(client: APIClient):
@@ -717,7 +702,7 @@ def test_registrar_pagamento_via_api(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
     resp = client.post(
@@ -740,8 +725,7 @@ def test_registrar_pagamento_requires_admin(client: APIClient):
     `_READ_ROLES`, mas não é `ADMIN`), não um usuário sem papel financeiro
     nenhum: um `RoleCode.USER` puro poderia ser barrado por um guard
     diferente (ex.: leitura), mascarando uma eventual regressão no guard
-    de `_can_manage` que este teste pretende cobrir (mesmo racional de
-    `test_update_due_day_via_api_requires_admin`)."""
+    de `_can_manage` que este teste pretende cobrir."""
     tenant, admin = _org("finapi5")
     with use_tenant(tenant.id):
         member = UserService().create_user(
@@ -776,7 +760,7 @@ def test_cancelar_pagamento_via_api(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
     paid = client.post(
@@ -812,7 +796,7 @@ def test_cancelar_pagamento_requires_admin(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
     paid = client.post(
@@ -842,7 +826,7 @@ def test_dues_cannot_be_deleted_directly(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
     due = client.get(f"/api/dues?user={member.id}").data["results"][0]
@@ -929,7 +913,7 @@ def test_finance_me_returns_own_summary_or_404(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
 
@@ -949,15 +933,15 @@ def test_activate_billing_reactivates_previously_deactivated_profile(tenant_a):
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
         profile = FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
         FinanceService().deactivate_billing(profile=profile)
         reactivated = FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=15, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
     assert reactivated.id == profile.id
     assert reactivated.is_active is True
-    assert reactivated.due_day == 15
+    assert reactivated.due_day == 5
 
 
 def test_reactivate_billing_via_api(client: APIClient):
@@ -970,20 +954,20 @@ def test_reactivate_billing_via_api(client: APIClient):
     client.force_authenticate(admin)
     created = client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "plan": "associado", "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
     profile_id = created.data["id"]
     client.post(f"/api/billing-profiles/{profile_id}/desativar")
     resp = client.post(
         "/api/billing-profiles",
-        {"user": str(member.id), "plan": "associado", "due_day": 12, "started_period": _period_str(0)},
+        {"user": str(member.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
     assert resp.status_code == 201, resp.data
     assert resp.data["id"] == profile_id
     assert resp.data["is_active"] is True
-    assert resp.data["due_day"] == 12
+    assert resp.data["due_day"] == 5
 
 
 def test_dashboard_payments_received_excludes_non_finance_payments(tenant_a):
@@ -992,7 +976,7 @@ def test_dashboard_payments_received_excludes_non_finance_payments(tenant_a):
             username="membro18", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0))
         FinanceService().register_payment(
             user=user, amount=Decimal("100.00"), method="dinheiro", paid_at=_dt(0),
         )
@@ -1014,7 +998,7 @@ def test_register_payment_immediately_consumes_existing_credit(tenant_a):
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
         profile = FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
         FinanceService().register_payment(
             user=user, amount=Decimal("140.00"), method="dinheiro", paid_at=_dt(0),
@@ -1041,7 +1025,7 @@ def test_dashboard_advance_payments_received_nets_consumed_credit(tenant_a):
             username="membro19", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0))
         FinanceService().register_payment(
             user=user, amount=Decimal("140.00"), method="dinheiro", paid_at=_dt(0),
         )
@@ -1058,7 +1042,7 @@ def test_register_payment_rejects_absurdly_large_amount(tenant_a):
             username="membro21", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0))
         with pytest.raises(BusinessRuleError):
             FinanceService().register_payment(
                 user=user, amount=Decimal("10000.00"), method="dinheiro", paid_at=_dt(0),
@@ -1073,7 +1057,7 @@ def test_activate_billing_rejects_started_period_too_far_in_the_past(tenant_a):
         )
         with pytest.raises(BusinessRuleError):
             FinanceService().activate_billing(
-                user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(-61)
+                user=user, plan=PlanCode.ASSOCIADO, started_period=_period(-61)
             )
 
 
@@ -1083,7 +1067,7 @@ def test_dashboard_and_billing_profiles_are_tenant_isolated(tenant_a, tenant_b):
             username="membroTA", password="supersecret123",
             posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
-        FinanceService().activate_billing(user=user_a, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0))
+        FinanceService().activate_billing(user=user_a, plan=PlanCode.ASSOCIADO, started_period=_period(0))
     with use_tenant(tenant_b.id):
         data_b = FinanceService().dashboard()
         profiles_b = list(FinanceRepository().active_profiles())
@@ -1119,7 +1103,7 @@ def test_activate_billing_via_api_rejects_ineligible_plan(client: APIClient):
     client.force_authenticate(admin)
     resp = client.post(
         "/api/billing-profiles",
-        {"user": str(coronel.id), "plan": "barbearia", "due_day": 10, "started_period": _period_str(0)},
+        {"user": str(coronel.id), "plan": "barbearia", "started_period": _period_str(0)},
         format="json",
     )
     assert resp.status_code == 422, resp.data
@@ -1168,7 +1152,13 @@ def test_associado_full_em_dia_can_generate_invite_without_being_admin(client: A
         )
         FinanceService().activate_billing(
             user=padrinho, plan=PlanCode.ASSOCIADO,
-            due_day=timezone.localdate().day, started_period=_period(0),
+            started_period=_period(0),
+        )
+        # Vencimento é sempre dia 5 (travado) — paga a mensalidade do mês
+        # corrente pra garantir "em dia" independente do dia em que o teste roda.
+        FinanceService().register_payment(
+            user=padrinho, amount=plan_price(PlanCode.ASSOCIADO), method="pix",
+            paid_at=timezone.now(),
         )
         cabo = UserService().create_user(
             username="cabo_convidado_par", password="supersecret123",
@@ -1188,7 +1178,7 @@ def test_associado_full_barbearia_plan_cannot_generate_invite(client: APIClient)
             posto_graduacao="Sd EV", tenant_id=tenant.id,
         )
         FinanceService().activate_billing(
-            user=so_barbearia, plan=PlanCode.BARBEARIA, due_day=10, started_period=_period(0),
+            user=so_barbearia, plan=PlanCode.BARBEARIA, started_period=_period(0),
         )
         cabo = UserService().create_user(
             username="cabo_convidado_barb", password="supersecret123",
@@ -1209,7 +1199,7 @@ def test_delinquent_associado_full_cannot_generate_invite(client: APIClient):
             posto_graduacao="Cel", tenant_id=tenant.id,
         )
         FinanceService().activate_billing(
-            user=atrasado, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0),
+            user=atrasado, plan=PlanCode.ASSOCIADO, started_period=_period(0),
         )
         perfil = BillingProfile.objects.get(user=atrasado)
         perfil.financial_status = FinancialStatus.DELINQUENT
@@ -1235,7 +1225,13 @@ def test_associado_invite_candidates_search(client: APIClient):
         )
         FinanceService().activate_billing(
             user=padrinho, plan=PlanCode.ASSOCIADO,
-            due_day=timezone.localdate().day, started_period=_period(0),
+            started_period=_period(0),
+        )
+        # Vencimento é sempre dia 5 (travado) — paga a mensalidade do mês
+        # corrente pra garantir "em dia" independente do dia em que o teste roda.
+        FinanceService().register_payment(
+            user=padrinho, amount=plan_price(PlanCode.ASSOCIADO), method="pix",
+            paid_at=timezone.now(),
         )
         UserService().create_user(
             username="cabo_alvo_busca", password="supersecret123",
@@ -1246,7 +1242,7 @@ def test_associado_invite_candidates_search(client: APIClient):
             posto_graduacao="Cb", nome_guerra="ALVOJA", tenant_id=tenant.id,
         )
         FinanceService().activate_billing(
-            user=ja_associado, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0),
+            user=ja_associado, plan=PlanCode.ASSOCIADO, started_period=_period(0),
         )
         UserService().create_user(
             username="coronel_alvo_busca", password="supersecret123",
@@ -1289,6 +1285,8 @@ def test_accept_associado_invite_activates_the_associado_plan(tenant_a):
     # Aceitar o convite troca o perfil de acesso: Cliente da Barbearia (sem
     # patrimônio) vira Usuário (já reserva bens) — RN da correção reportada.
     assert list(cabo.roles.values_list("code", flat=True)) == [RoleCode.USER]
+    # Vencimento travado (dia 5): aceitar convite não pode nascer vencido.
+    assert profile.financial_status not in ("overdue", "delinquent")
 
 
 def test_activate_billing_associado_full_grants_patrimonio_access(tenant_a):
@@ -1302,7 +1300,7 @@ def test_activate_billing_associado_full_grants_patrimonio_access(tenant_a):
             )
             assert membro.has_role(RoleCode.BARBERSHOP_CLIENT)
             FinanceService().activate_billing(
-                user=membro, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0),
+                user=membro, plan=PlanCode.ASSOCIADO, started_period=_period(0),
             )
             membro.refresh_from_db()
             assert list(membro.roles.values_list("code", flat=True)) == [RoleCode.USER]
@@ -1317,7 +1315,7 @@ def test_activate_billing_barbearia_plan_keeps_cb_as_barbershop_client(tenant_a)
             posto_graduacao="Cb", tenant_id=tenant_a.id,
         )
         FinanceService().activate_billing(
-            user=cabo, plan=PlanCode.BARBEARIA, due_day=10, started_period=_period(0),
+            user=cabo, plan=PlanCode.BARBEARIA, started_period=_period(0),
         )
         cabo.refresh_from_db()
     assert list(cabo.roles.values_list("code", flat=True)) == [RoleCode.BARBERSHOP_CLIENT]
@@ -1333,7 +1331,7 @@ def test_activate_billing_does_not_touch_roles_outside_forced_ranks(tenant_a):
             posto_graduacao="Cel", role_codes=[RoleCode.DIRECTOR], tenant_id=tenant_a.id,
         )
         FinanceService().activate_billing(
-            user=coronel, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0),
+            user=coronel, plan=PlanCode.ASSOCIADO, started_period=_period(0),
         )
         coronel.refresh_from_db()
     assert list(coronel.roles.values_list("code", flat=True)) == [RoleCode.DIRECTOR]
@@ -1377,6 +1375,31 @@ def test_accept_associado_invite_rejects_expired_token(tenant_a):
         invite.save(update_fields=["expires_at"])
         with pytest.raises(BusinessRuleError):
             FinanceService().accept_associado_invite(token=invite.token, actor=cabo)
+
+
+def test_first_billable_period_skips_to_next_month_after_due_day():
+    from apps.finance.services import _first_billable_period
+
+    assert _first_billable_period(date(2026, 8, 4)) == date(2026, 8, 1)
+    assert _first_billable_period(date(2026, 8, 5)) == date(2026, 8, 1)
+    assert _first_billable_period(date(2026, 8, 6)) == date(2026, 9, 1)
+    assert _first_billable_period(date(2026, 12, 20)) == date(2027, 1, 1)
+
+
+def test_self_subscribe_never_creates_an_instantly_overdue_due(client: APIClient):
+    """Autoatendimento não pode nascer vencido: se o dia 5 (vencimento
+    travado) já passou neste mês, o primeiro período faturável pula pro
+    mês seguinte — vale não importa em que dia do mês o teste rodar."""
+    tenant, admin = _org("finapi13e")
+    with use_tenant(tenant.id):
+        coronel = UserService().create_user(
+            username="coronel_sem_atraso", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant.id,
+        )
+    client.force_authenticate(coronel)
+    resp = client.post("/api/finance/me/assinar", {"plan": "associado"}, format="json")
+    assert resp.status_code == 201, resp.data
+    assert resp.data["financial_status"] not in ("overdue", "delinquent")
 
 
 def test_self_subscribe_activates_barbearia_plan_for_eligible_user(client: APIClient):
@@ -1491,7 +1514,7 @@ def test_initiate_pix_payment_opens_a_pending_charge(tenant_a):
             posto_graduacao="Cel", tenant_id=tenant_a.id,
         )
         profile = FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
         payment = FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
         profile.refresh_from_db()
@@ -1507,7 +1530,7 @@ def test_initiate_pix_payment_rejects_when_one_is_already_open(tenant_a):
             posto_graduacao="Cel", tenant_id=tenant_a.id,
         )
         FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
         FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
         with pytest.raises(BusinessRuleError):
@@ -1531,7 +1554,7 @@ def test_initiate_pix_payment_rejects_amount_below_the_plan_fee(tenant_a):
             posto_graduacao="Cel", tenant_id=tenant_a.id,
         )
         FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
         with pytest.raises(BusinessRuleError):
             FinanceService().initiate_pix_payment(user=user, amount=Decimal("50.00"))
@@ -1544,7 +1567,7 @@ def test_initiate_pix_payment_rejects_amount_not_a_multiple_of_the_fee(tenant_a)
             posto_graduacao="Cel", tenant_id=tenant_a.id,
         )
         FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
         with pytest.raises(BusinessRuleError):
             FinanceService().initiate_pix_payment(user=user, amount=Decimal("150.00"))
@@ -1559,7 +1582,7 @@ def test_approved_pix_payment_settles_the_open_dues(tenant_a):
             posto_graduacao="Cel", tenant_id=tenant_a.id,
         )
         profile = FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
         aberto = FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
         FINANCE_PROVIDER_STATUS["value"] = "approved"
@@ -1589,7 +1612,7 @@ def test_expired_pix_payment_does_not_settle_and_clears_pending(tenant_a):
             posto_graduacao="Cel", tenant_id=tenant_a.id,
         )
         profile = FinanceService().activate_billing(
-            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+            user=user, plan=PlanCode.ASSOCIADO, started_period=_period(0)
         )
         payment = FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
         payment.expires_at = timezone.now() - timedelta(minutes=1)
@@ -1626,8 +1649,7 @@ def test_initiate_pix_payment_via_api_requires_email(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/billing-profiles",
-        {"user": str(sememail.id), "plan": "associado", "due_day": 10,
-         "started_period": _period_str(0)},
+        {"user": str(sememail.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
     client.force_authenticate(sememail)
@@ -1646,8 +1668,7 @@ def test_initiate_and_check_pix_payment_via_api(client: APIClient):
     client.force_authenticate(admin)
     client.post(
         "/api/billing-profiles",
-        {"user": str(user.id), "plan": "associado", "due_day": 10,
-         "started_period": _period_str(0)},
+        {"user": str(user.id), "plan": "associado", "started_period": _period_str(0)},
         format="json",
     )
     client.force_authenticate(user)

@@ -185,7 +185,6 @@ export default function FinanceStatementPage() {
                     activate.mutate({
                       user: profile.user,
                       plan: profile.plan,
-                      due_day: profile.due_day,
                       started_period: profile.started_period,
                     });
                 }}

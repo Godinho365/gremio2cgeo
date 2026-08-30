@@ -27,7 +27,6 @@ from .serializers import (
     GenerateInviteSerializer,
     InitiatePixPaymentSerializer,
     RegisterPaymentSerializer,
-    UpdateDueDaySerializer,
 )
 
 _READ_ROLES = (RoleCode.ADMIN, RoleCode.DIRECTOR, RoleCode.INVENTORY, RoleCode.AUDITOR)
@@ -63,7 +62,7 @@ class BillingProfileViewSet(TenantScopedViewSet):
     queryset = BillingProfile.objects.none()
     service = FinanceService()
     permission_classes = [IsAuthenticated]
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    http_method_names = ["get", "post", "head", "options"]
 
     def get_queryset(self):  # type: ignore[override]
         if not _can_read(self.request.user):
@@ -79,24 +78,10 @@ class BillingProfileViewSet(TenantScopedViewSet):
         profile = self.service.activate_billing(
             user=payload.validated_data["user"],
             plan=payload.validated_data["plan"],
-            due_day=payload.validated_data["due_day"],
             started_period=payload.validated_data["started_period"],
             actor_id=str(request.user.pk),
         )
         return Response(BillingProfileSerializer(profile).data, status=201)
-
-    @extend_schema(request=UpdateDueDaySerializer, responses={200: BillingProfileSerializer})
-    def partial_update(self, request: Request, *args: object, **kwargs: object) -> Response:
-        if not _can_manage(request.user):
-            raise BusinessRuleError("Apenas Administrador edita o vencimento.", code="forbidden")
-        payload = UpdateDueDaySerializer(data=request.data)
-        payload.is_valid(raise_exception=True)
-        profile = self.service.update_due_day(
-            profile=self.get_object(),
-            due_day=payload.validated_data["due_day"],
-            actor_id=str(request.user.pk),
-        )
-        return Response(BillingProfileSerializer(profile).data)
 
     @extend_schema(responses={200: BillingProfileSerializer})
     @action(detail=True, methods=["post"], url_path="desativar")

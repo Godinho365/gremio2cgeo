@@ -340,7 +340,6 @@ function ActivateBillingModal({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState({
     user: "",
     plan: "" as PlanCode | "",
-    due_day: 10,
     started_period: today.slice(0, 8) + "01",
   });
   const [error, setError] = useState<string | null>(null);
@@ -415,29 +414,16 @@ function ActivateBillingModal({ onClose }: { onClose: () => void }) {
                     </select>
                   </div>
                 )}
-                <div className="row">
-                  <div className="col-6 mb-3">
-                    <label className="form-label required">Dia de vencimento</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      min={1}
-                      max={31}
-                      value={form.due_day}
-                      onChange={(e) => setForm((f) => ({ ...f, due_day: Number(e.target.value) }))}
-                      required
-                    />
-                  </div>
-                  <div className="col-6 mb-3">
-                    <label className="form-label required">Mês de início</label>
-                    <input
-                      type="date"
-                      className="form-control"
-                      value={form.started_period}
-                      onChange={(e) => setForm((f) => ({ ...f, started_period: e.target.value }))}
-                      required
-                    />
-                  </div>
+                <div className="mb-3">
+                  <label className="form-label required">Mês de início</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={form.started_period}
+                    onChange={(e) => setForm((f) => ({ ...f, started_period: e.target.value }))}
+                    required
+                  />
+                  <div className="form-hint">Vencimento é sempre dia 5.</div>
                 </div>
               </div>
               <div className="modal-footer">

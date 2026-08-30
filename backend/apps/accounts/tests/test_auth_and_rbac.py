@@ -295,8 +295,15 @@ def test_cannot_delete_user_with_bookings(client: APIClient):
         )
         # Reservar bem do patrimônio exige Associado Full ativo e em dia.
         FinanceService().activate_billing(
-            user=dono, plan=PlanCode.ASSOCIADO, due_day=timezone.localdate().day,
+            user=dono, plan=PlanCode.ASSOCIADO,
             started_period=timezone.localdate().replace(day=1),
+        )
+        # Vencimento é sempre dia 5 (travado) — paga a mensalidade do mês
+        # corrente pra garantir "em dia" independente do dia em que o teste roda.
+        from apps.finance.models import plan_price
+
+        FinanceService().register_payment(
+            user=dono, amount=plan_price(PlanCode.ASSOCIADO), method="pix", paid_at=timezone.now(),
         )
         asset = AssetService().create_asset(name="Bem reservado")
     client.force_authenticate(dono)

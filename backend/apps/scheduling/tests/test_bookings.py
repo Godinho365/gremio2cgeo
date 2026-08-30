@@ -11,7 +11,7 @@ from django.utils import timezone
 from apps.accounts.models import RoleCode
 from apps.accounts.services import OnboardingService, UserService
 from apps.assets.services import AssetService
-from apps.finance.models import PlanCode
+from apps.finance.models import PlanCode, plan_price
 from apps.finance.services import FinanceService
 from apps.scheduling.models import Booking, BookingStatus
 from apps.scheduling.services import BookingService
@@ -37,8 +37,13 @@ def _make_associado(tenant, user):
         FinanceService().activate_billing(
             user=user,
             plan=PlanCode.ASSOCIADO,
-            due_day=timezone.localdate().day,
             started_period=timezone.localdate().replace(day=1),
+        )
+        # Vencimento é sempre dia 5 (travado) — se hoje já passou do dia 5,
+        # a mensalidade do mês corrente nasceria vencida. Paga na hora pra
+        # simular quem está genuinamente em dia, não travado a um dia do mês.
+        FinanceService().register_payment(
+            user=user, amount=plan_price(PlanCode.ASSOCIADO), method="pix", paid_at=timezone.now(),
         )
 
 
@@ -369,7 +374,7 @@ def test_barbearia_plan_does_not_unlock_reservations():
             posto_graduacao="Cb", tenant_id=tenant.id,
         )
         FinanceService().activate_billing(
-            user=cb, plan=PlanCode.BARBEARIA, due_day=timezone.localdate().day,
+            user=cb, plan=PlanCode.BARBEARIA,
             started_period=timezone.localdate().replace(day=1),
         )
         inicio = datetime.now(UTC) + timedelta(days=13)

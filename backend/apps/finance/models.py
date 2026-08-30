@@ -20,6 +20,12 @@ from apps.payments.models import Payment
 from core.models import TenantScopedModel
 
 
+# Vencimento é o mesmo dia pra todo mundo — travado, não configurável por
+# perfil (RN pedida: facilita conferência e o comparativo mensal por
+# competência). Ver migração 0008 pro backfill dos perfis já existentes.
+DEFAULT_DUE_DAY = 5
+
+
 class PlanCode(models.TextChoices):
     # O código interno ("associado"/"barbearia") não muda — só o rótulo que
     # aparece pra pessoa. Mudar o código exigiria migração de dados; o rótulo
@@ -75,7 +81,7 @@ class BillingProfile(TenantScopedModel):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="billing_profile"
     )
     plan = models.CharField(max_length=20, choices=PlanCode.choices)
-    due_day = models.PositiveSmallIntegerField()
+    due_day = models.PositiveSmallIntegerField(default=DEFAULT_DUE_DAY)
     started_period = models.DateField()
     is_active = models.BooleanField(default=True)
     financial_status = models.CharField(

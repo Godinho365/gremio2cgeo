@@ -46,16 +46,11 @@ class BillingProfileSerializer(serializers.ModelSerializer):
 class ActivateBillingSerializer(serializers.Serializer):
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.none())
     plan = serializers.ChoiceField(choices=PlanCode.choices)
-    due_day = serializers.IntegerField(min_value=1, max_value=31)
     started_period = serializers.DateField()
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.fields["user"].queryset = _tenant_users_queryset()  # type: ignore[attr-defined]
-
-
-class UpdateDueDaySerializer(serializers.Serializer):
-    due_day = serializers.IntegerField(min_value=1, max_value=31)
 
 
 class AssociadoInviteSerializer(serializers.ModelSerializer):

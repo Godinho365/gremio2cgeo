@@ -27,6 +27,7 @@ from .models import (
     OPEN_DUE_STATUSES,
     AssociadoInvite,
     BillingProfile,
+    DEFAULT_DUE_DAY,
     Due,
     DueStatus,
     FinanceCreditReason,
@@ -52,6 +53,19 @@ def _add_months(d: date, n: int) -> date:
     year = d.year + month_index // 12
     month = month_index % 12 + 1
     return date(year, month, 1)
+
+
+def _first_billable_period(today: date) -> date:
+    """Primeiro mês faturável pro autoatendimento (perfil, convite): se o
+    vencimento (dia 5, travado) deste mês já passou, começa no mês
+    seguinte — quem entra dia 30 não pode nascer devendo uma mensalidade
+    cujo prazo já tinha vencido antes de ela sequer existir para ela.
+    Ativação pelo admin não passa por aqui — backdatar é intencional lá
+    (registro de histórico real, inclusive vencido)."""
+    current = _first_of_month(today)
+    if today.day > DEFAULT_DUE_DAY:
+        return _add_months(current, 1)
+    return current
 
 
 def _due_date_for(period: date, due_day: int) -> date:
@@ -153,15 +167,10 @@ class FinanceService(BaseService):
         *,
         user: User,
         plan: str,
-        due_day: int,
         started_period: date,
         actor_id: str | None = None,
     ) -> BillingProfile:
         self._assert_eligible(user, plan)
-        if not (1 <= due_day <= 31):
-            raise BusinessRuleError(
-                "Dia de vencimento deve ser entre 1 e 31.", code="invalid_due_day"
-            )
         # Cb/Sd EP: Associado Full libera o patrimônio (perfil "Usuário");
         # qualquer outro plano mantém/retoma o Cliente da Barbearia. Sd EV
         # nunca chega no ramo ASSOCIADO — _assert_eligible já barrou acima.
@@ -178,7 +187,7 @@ class FinanceService(BaseService):
                 )
             existing.is_active = True
             existing.plan = plan
-            existing.due_day = due_day
+            existing.due_day = DEFAULT_DUE_DAY
             existing.save(update_fields=["is_active", "plan", "due_day", "updated_at"])
             self._ensure_window(existing)
             existing.financial_status = self._compute_financial_status(existing)
@@ -188,7 +197,7 @@ class FinanceService(BaseService):
                 entity_type="BillingProfile",
                 entity_id=existing.id,
                 actor_id=actor_id,
-                diff={"plan": plan, "due_day": due_day},
+                diff={"plan": plan},
             )
             return existing
 
@@ -199,7 +208,7 @@ class FinanceService(BaseService):
                 code="started_period_too_old",
             )
         profile = self.profiles.create(
-            user_id=user.pk, plan=plan, due_day=due_day, started_period=started_period
+            user_id=user.pk, plan=plan, due_day=DEFAULT_DUE_DAY, started_period=started_period
         )
         self._ensure_window(profile)
         profile.financial_status = self._compute_financial_status(profile)
@@ -209,7 +218,7 @@ class FinanceService(BaseService):
             entity_type="BillingProfile",
             entity_id=profile.id,
             actor_id=actor_id,
-            diff={"plan": plan, "due_day": due_day, "started_period": str(profile.started_period)},
+            diff={"plan": plan, "started_period": str(profile.started_period)},
         )
         return profile
 
@@ -225,12 +234,10 @@ class FinanceService(BaseService):
                 "administrador ou pra um Associado Full em dia.",
                 code="invite_required",
             )
-        today = timezone.localdate()
         return self.activate_billing(
             user=user,
             plan=plan,
-            due_day=today.day,
-            started_period=today.replace(day=1),
+            started_period=_first_billable_period(timezone.localdate()),
             actor_id=str(user.pk),
         )
 
@@ -306,12 +313,10 @@ class FinanceService(BaseService):
         if timezone.now() > invite.expires_at:
             raise BusinessRuleError("Este convite expirou.", code="invite_expired")
 
-        today = timezone.localdate()
         profile = self.activate_billing(
             user=actor,
             plan=PlanCode.ASSOCIADO,
-            due_day=today.day,
-            started_period=_first_of_month(today),
+            started_period=_first_billable_period(timezone.localdate()),
             actor_id=str(actor.pk),
         )
         invite.used_at = timezone.now()
@@ -586,32 +591,6 @@ class FinanceService(BaseService):
             entity_type="BillingProfile",
             entity_id=profile.id,
             actor_id=actor_id,
-        )
-        return profile
-
-    @transaction.atomic
-    def update_due_day(
-        self, *, profile: BillingProfile, due_day: int, actor_id: str | None = None
-    ) -> BillingProfile:
-        if not (1 <= due_day <= 31):
-            raise BusinessRuleError(
-                "Dia de vencimento deve ser entre 1 e 31.", code="invalid_due_day"
-            )
-        profile.due_day = due_day
-        profile.save(update_fields=["due_day", "updated_at"])
-        today = timezone.localdate()
-        for due in self.dues.open_for_profile(profile):
-            due.due_date = _due_date_for(due.period, due_day)
-            due.status = self._status_for(due.due_date, today)
-            due.save(update_fields=["due_date", "status", "updated_at"])
-        profile.financial_status = self._compute_financial_status(profile, today=today)
-        profile.save(update_fields=["financial_status", "updated_at"])
-        audit.record(
-            action="finance.due_day_updated",
-            entity_type="BillingProfile",
-            entity_id=profile.id,
-            actor_id=actor_id,
-            diff={"due_day": due_day},
         )
         return profile
 
