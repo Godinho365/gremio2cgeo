@@ -11,9 +11,12 @@ export type FinancialStatus =
   | "overdue"
   | "delinquent";
 
+// Pago antecipadamente conta como em dia — quem pagou mais meses do que
+// devia está tão em dia quanto quem pagou exatamente o mês corrente, só
+// que mais confortável. Mesmo rótulo/cor de up_to_date de propósito.
 export const FINANCIAL_STATUS_LABEL: Record<FinancialStatus, string> = {
   up_to_date: "Em dia",
-  paid_in_advance: "Pago antecipadamente",
+  paid_in_advance: "Em dia",
   due_soon: "Próximo do vencimento",
   due_today: "Vencendo hoje",
   overdue: "Vencido",
@@ -23,7 +26,7 @@ export const FINANCIAL_STATUS_LABEL: Record<FinancialStatus, string> = {
 /** Classe de badge (Tabler) por situação — verde a vermelho conforme piora. */
 export const FINANCIAL_STATUS_BADGE: Record<FinancialStatus, string> = {
   up_to_date: "bg-green-lt",
-  paid_in_advance: "bg-blue-lt",
+  paid_in_advance: "bg-green-lt",
   due_soon: "bg-yellow-lt",
   due_today: "bg-orange-lt",
   overdue: "bg-red-lt",

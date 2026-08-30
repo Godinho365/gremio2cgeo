@@ -383,7 +383,7 @@ function DashboardTab({
           <StatCard label="Usuários na relação" value={dashboard.total_users} />
           <StatCard
             label="Em dia"
-            value={dashboard.up_to_date_count}
+            value={dashboard.up_to_date_count + dashboard.paid_in_advance_count}
             onClick={() => onFiltrar("up_to_date")}
           />
           <StatCard
@@ -416,7 +416,6 @@ type SituacaoFilter = "todos" | "sem_plano" | "desativado" | FinancialStatus;
 const SITUACAO_FILTER_OPTIONS: { value: SituacaoFilter; label: string }[] = [
   { value: "todos", label: "Todas as situações" },
   { value: "up_to_date", label: FINANCIAL_STATUS_LABEL.up_to_date },
-  { value: "paid_in_advance", label: FINANCIAL_STATUS_LABEL.paid_in_advance },
   { value: "due_soon", label: FINANCIAL_STATUS_LABEL.due_soon },
   { value: "due_today", label: FINANCIAL_STATUS_LABEL.due_today },
   { value: "overdue", label: FINANCIAL_STATUS_LABEL.overdue },
@@ -428,6 +427,9 @@ const SITUACAO_FILTER_OPTIONS: { value: SituacaoFilter; label: string }[] = [
 function situacaoKeyFor(p: BillingProfile | undefined): SituacaoFilter {
   if (!p) return "sem_plano";
   if (!p.is_active) return "desativado";
+  // Pago antecipadamente conta como em dia — mesmo grupo pro filtro,
+  // igual já é pro rótulo/badge (ver FINANCIAL_STATUS_LABEL).
+  if (p.financial_status === "paid_in_advance") return "up_to_date";
   return p.financial_status;
 }
 
