@@ -5,7 +5,7 @@ import {
   IconUserOff,
   IconX,
 } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   APPOINTMENT_STATUS_META,
@@ -57,6 +57,7 @@ function PublicAgendaLinkModal({ onClose }: { onClose: () => void }) {
   const [token, setToken] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     generate
@@ -70,9 +71,24 @@ function PublicAgendaLinkModal({ onClose }: { onClose: () => void }) {
 
   async function copiar() {
     if (!url) return;
-    await navigator.clipboard.writeText(url);
-    setCopiado(true);
-    setTimeout(() => setCopiado(false), 2500);
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(url);
+      ok = true;
+    } catch {
+      // Sem permissão pro Clipboard API (comum em navegador/sandbox
+      // restrito) — cai pro método antigo, que funciona em mais lugares.
+      if (inputRef.current) {
+        inputRef.current.select();
+        ok = document.execCommand("copy");
+      }
+    }
+    if (ok) {
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2500);
+    } else {
+      inputRef.current?.select();
+    }
   }
 
   async function regenerar() {
@@ -105,7 +121,14 @@ function PublicAgendaLinkModal({ onClose }: { onClose: () => void }) {
               </p>
               {url ? (
                 <div className="input-group">
-                  <input type="text" className="form-control" value={url} readOnly />
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    className="form-control"
+                    value={url}
+                    readOnly
+                    onClick={(e) => e.currentTarget.select()}
+                  />
                   <button type="button" className="btn btn-outline-secondary" onClick={copiar}>
                     {copiado ? "Copiado!" : "Copiar"}
                   </button>
