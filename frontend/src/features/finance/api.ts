@@ -33,8 +33,8 @@ export const FINANCIAL_STATUS_BADGE: Record<FinancialStatus, string> = {
 export type PlanCode = "associado" | "barbearia";
 
 export const PLAN_LABEL: Record<PlanCode, string> = {
-  associado: "Associado",
-  barbearia: "Mensalista Barbearia",
+  associado: "Associado Full",
+  barbearia: "Assinatura Barbearia",
 };
 
 const _BARBEARIA_ONLY: readonly string[] = ["Sd EV"];

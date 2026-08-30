@@ -204,7 +204,7 @@ class MyFinanceView(TenantContextAPIView):
 
 
 class SelfSubscribeView(TenantContextAPIView):
-    """Autoatendimento: o próprio usuário assina Mensalista Barbearia.
+    """Autoatendimento: o próprio usuário assina a Assinatura Barbearia.
 
     A elegibilidade (`_assert_eligible` dentro de `activate_billing`) já
     recusa sozinha quem não é Cb/Sd EP/Sd EV — não precisa duplicar a

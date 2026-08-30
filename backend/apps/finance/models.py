@@ -21,8 +21,11 @@ from core.models import TenantScopedModel
 
 
 class PlanCode(models.TextChoices):
-    ASSOCIADO = "associado", "Associado"
-    BARBEARIA = "barbearia", "Mensalista Barbearia"
+    # O código interno ("associado"/"barbearia") não muda — só o rótulo que
+    # aparece pra pessoa. Mudar o código exigiria migração de dados; o rótulo
+    # é só metadado de exibição.
+    ASSOCIADO = "associado", "Associado Full"
+    BARBEARIA = "barbearia", "Assinatura Barbearia"
 
 
 def plan_price(code: str) -> Decimal:

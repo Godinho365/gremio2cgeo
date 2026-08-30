@@ -13,8 +13,8 @@ from django.db import models
 from apps.scheduling.models import Weekday
 from core.models import TenantScopedModel
 
-# Assinante (Associado ou Mensalista Barbearia, ver apps.finance) tem direito
-# a 4 cortes por mês; quem não é assinante paga por corte.
+# Assinante (Associado Full ou Assinatura Barbearia, ver apps.finance) tem
+# direito a 4 cortes por mês; quem não é assinante paga por corte.
 SUBSCRIBER_MONTHLY_LIMIT = 4
 
 

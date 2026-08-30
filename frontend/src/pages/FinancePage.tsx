@@ -295,7 +295,7 @@ function AssociadoInvites() {
   return (
     <div className="card mt-3">
       <div className="card-header">
-        <h3 className="card-title">Convite para o Associado</h3>
+        <h3 className="card-title">Convite para o Associado Full</h3>
       </div>
       <div className="card-body">
         {link && (
@@ -304,7 +304,7 @@ function AssociadoInvites() {
           </div>
         )}
         <p className="text-secondary">
-          Cabos e Soldados EP podem escolher entre Associado e Mensalista
+          Cabos e Soldados EP podem escolher entre Associado Full e Assinatura
           Barbearia. Gere um convite pra deixar a pessoa escolher ela mesma.
         </p>
         <select

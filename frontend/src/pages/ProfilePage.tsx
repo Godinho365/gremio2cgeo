@@ -389,7 +389,7 @@ function NoPlanCard() {
         <p className="text-secondary">Sem plano ativo.</p>
         {podeBarbearia ? (
           <button className="btn btn-primary" onClick={assinar} disabled={subscribe.isPending}>
-            {subscribe.isPending ? "Ativando…" : `Assinar ${PLAN_LABEL.barbearia}`}
+            {subscribe.isPending ? "Ativando…" : `Ativar ${PLAN_LABEL.barbearia}`}
           </button>
         ) : (
           <a href="/barbearia" className="btn btn-outline-primary">
