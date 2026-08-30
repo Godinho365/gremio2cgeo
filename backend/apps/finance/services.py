@@ -397,6 +397,15 @@ class FinanceService(BaseService):
                 "Já existe um Pix em aberto para sua mensalidade.", code="pix_already_pending"
             )
 
+        # Sempre um múltiplo inteiro da mensalidade — nunca menos que um mês
+        # (RN de autoatendimento: sem isso dava pra abrir um Pix de R$ 0,01).
+        fee = plan_price(profile.plan)
+        if amount < fee or (amount % fee) != 0:
+            raise BusinessRuleError(
+                f"O valor precisa ser um múltiplo de R$ {fee} (a mensalidade do seu plano).",
+                code="invalid_pix_amount",
+            )
+
         payment = self.payment_gateway.open_pix_charge(
             amount=amount, description="Mensalidade", payer=user
         )
@@ -586,6 +595,8 @@ class FinanceService(BaseService):
             "financial_status": profile.financial_status,
             "plan": profile.plan,
             "plan_label": profile.get_plan_display(),
+            "plan_price": plan_price(profile.plan),
+            "pending_pix_payment_id": profile.pending_payment_id,
             "due_day": profile.due_day,
             "next_due_date": next_due.due_date if next_due else None,
             "days_until_due": (next_due.due_date - today).days if next_due else None,

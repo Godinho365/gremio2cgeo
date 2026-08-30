@@ -270,6 +270,8 @@ export interface MyFinanceSummary {
   financial_status: FinancialStatus;
   plan: PlanCode;
   plan_label: string;
+  plan_price: string;
+  pending_pix_payment_id: string | null;
   due_day: number;
   next_due_date: string | null;
   days_until_due: number | null;

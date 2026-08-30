@@ -1105,6 +1105,32 @@ def test_initiate_pix_payment_rejects_when_not_in_billing(tenant_a):
             FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
 
 
+def test_initiate_pix_payment_rejects_amount_below_the_plan_fee(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro_pix7", password="supersecret123", email="membro_pix7@example.com",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(
+            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+        )
+        with pytest.raises(BusinessRuleError):
+            FinanceService().initiate_pix_payment(user=user, amount=Decimal("50.00"))
+
+
+def test_initiate_pix_payment_rejects_amount_not_a_multiple_of_the_fee(tenant_a):
+    with use_tenant(tenant_a.id):
+        user = UserService().create_user(
+            username="membro_pix8", password="supersecret123", email="membro_pix8@example.com",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(
+            user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
+        )
+        with pytest.raises(BusinessRuleError):
+            FinanceService().initiate_pix_payment(user=user, amount=Decimal("150.00"))
+
+
 def test_approved_pix_payment_settles_the_open_dues(tenant_a):
     from apps.finance.tests.conftest import FINANCE_PROVIDER_STATUS
 

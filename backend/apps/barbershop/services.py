@@ -27,6 +27,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.finance.models import FinancialStatus
 from apps.finance.repositories import FinanceRepository
 from apps.payments.credits import CreditService
 from apps.payments.models import CreditReason, Payment, PaymentStatus
@@ -83,10 +84,17 @@ class BarbershopService(BaseService):
         self.credits = credits or CreditService()
         self.finance_profiles = finance_profiles or FinanceRepository()
 
+    # Vencido ou inadimplente perde o corte de assinante até regularizar —
+    # continua elegível a avulso normalmente (RN-BB4).
+    _SUBSCRIBER_BLOCKING_STATUSES = (FinancialStatus.OVERDUE, FinancialStatus.DELINQUENT)
+
     def _is_subscriber(self, customer_id: UUID | str) -> bool:
-        """Assinante = tem BillingProfile ativo no Financeiro, qualquer plano."""
+        """Assinante = tem BillingProfile ativo no Financeiro, qualquer plano,
+        e está em dia (nem vencido, nem inadimplente)."""
         profile = self.finance_profiles.profile_for_user(customer_id)
-        return profile is not None and profile.is_active
+        if profile is None or not profile.is_active:
+            return False
+        return profile.financial_status not in self._SUBSCRIBER_BLOCKING_STATUSES
 
     # ── Cadastro do barbeiro ────────────────────────────────────────────────
 

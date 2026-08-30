@@ -310,6 +310,63 @@ def test_cancelling_gives_the_subscriber_cut_back(client: APIClient):
     assert de_novo.status_code == 201, de_novo.data
 
 
+def test_delinquent_subscriber_does_not_get_the_free_cut(client: APIClient):
+    """Vencido/inadimplente perde o corte de assinante até regularizar — o
+    BillingProfile continua ativo, só a situação financeira muda."""
+    from apps.finance.models import BillingProfile, FinancialStatus
+
+    tenant, admin = _org("bb30")
+    day = _next_weekday(2)
+    barber = _barber_with_grid(tenant, admin, weekday=2)
+    with use_tenant(tenant.id):
+        cliente = UserService().create_user(
+            username="sd_inadimplente", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant.id, email="sd_inadimplente@example.com",
+        )
+    _make_subscriber(tenant, cliente)
+    with use_tenant(tenant.id):
+        perfil = BillingProfile.objects.get(user=cliente)
+        perfil.financial_status = FinancialStatus.DELINQUENT
+        perfil.save(update_fields=["financial_status"])
+
+    client.force_authenticate(cliente)
+    resp = client.post(
+        "/api/appointments",
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    assert resp.data["is_subscriber"] is False
+    assert Decimal(resp.data["price"]) == Decimal("15.00")
+
+
+def test_overdue_subscriber_does_not_get_the_free_cut(client: APIClient):
+    from apps.finance.models import BillingProfile, FinancialStatus
+
+    tenant, admin = _org("bb31")
+    day = _next_weekday(2)
+    barber = _barber_with_grid(tenant, admin, weekday=2)
+    with use_tenant(tenant.id):
+        cliente = UserService().create_user(
+            username="sd_vencido", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant.id, email="sd_vencido@example.com",
+        )
+    _make_subscriber(tenant, cliente)
+    with use_tenant(tenant.id):
+        perfil = BillingProfile.objects.get(user=cliente)
+        perfil.financial_status = FinancialStatus.OVERDUE
+        perfil.save(update_fields=["financial_status"])
+
+    client.force_authenticate(cliente)
+    resp = client.post(
+        "/api/appointments",
+        {"barber": str(barber.id), "start_at": _at(day, 9).isoformat()},
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    assert resp.data["is_subscriber"] is False
+
+
 # ── Remarcar e cancelar ─────────────────────────────────────────────────────
 
 

@@ -39,9 +39,15 @@ export default function FinancePixModal({
   resumo: MyFinanceSummary;
   onClose: () => void;
 }) {
-  const [fase, setFase] = useState<"valor" | "pix">("valor");
-  const [valor, setValor] = useState(resumo.pending_amount || "0.00");
-  const [pixId, setPixId] = useState<string | null>(null);
+  // Já tinha um Pix aberto (achado ao vivo: fechar a tela e reabrir não
+  // dava mais pra ver nem pagar o que já tinha sido gerado) — retoma direto
+  // na tela do QR em vez de tentar criar outro e esbarrar em
+  // "pix_already_pending".
+  const retomando = !!resumo.pending_pix_payment_id;
+  const [fase, setFase] = useState<"valor" | "pix">(retomando ? "pix" : "valor");
+  const [pixId, setPixId] = useState<string | null>(resumo.pending_pix_payment_id);
+  const precoMensal = Number(resumo.plan_price);
+  const [meses, setMeses] = useState(Math.max(1, resumo.months_open));
   const [copiado, setCopiado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -63,9 +69,10 @@ export default function FinancePixModal({
     qc.invalidateQueries({ queryKey: ["finance"] });
   }, [pago, perdido, qc]);
 
-  const porMes =
-    resumo.months_open > 0 ? Number(resumo.pending_amount) / resumo.months_open : null;
-  const meses = porMes && Number(valor) > 0 ? Math.floor(Number(valor) / porMes) : 0;
+  // Sempre um múltiplo inteiro da mensalidade — nunca menos que o valor do
+  // plano (achado ao vivo: dava pra digitar qualquer valor, até menor que
+  // o mínimo). O servidor valida de novo; isto aqui só evita a viagem.
+  const valor = (meses * precoMensal).toFixed(2);
 
   async function gerarPix(e: React.FormEvent) {
     e.preventDefault();
@@ -110,21 +117,22 @@ export default function FinancePixModal({
               <form onSubmit={gerarPix}>
                 <div className="modal-body">
                   {erro && <div className="alert alert-danger">{erro}</div>}
-                  <label className="form-label required">Valor</label>
+                  <label className="form-label required">Quantos meses pagar?</label>
                   <input
                     type="number"
-                    step="0.01"
-                    min="0.01"
+                    step="1"
+                    min="1"
                     className="form-control"
-                    value={valor}
-                    onChange={(e) => setValor(e.target.value)}
+                    value={meses}
+                    onChange={(e) => setMeses(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
                     required
                   />
-                  {meses > 0 && (
-                    <div className="alert alert-info mt-3 mb-0">
-                      Esse valor cobre {meses} {meses === 1 ? "mês" : "meses"} de mensalidade.
-                    </div>
-                  )}
+                  <div className="form-hint">
+                    {resumo.plan_label} — R$ {brl(precoMensal)} por mês
+                  </div>
+                  <div className="alert alert-info mt-3 mb-0">
+                    Valor do Pix: <strong>R$ {brl(valor)}</strong>
+                  </div>
                 </div>
                 <div className="modal-footer">
                   <button type="button" className="btn btn-link" onClick={onClose}>

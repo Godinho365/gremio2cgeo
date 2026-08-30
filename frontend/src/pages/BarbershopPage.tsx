@@ -249,11 +249,16 @@ export default function BarbershopPage() {
   const barbers = useBarbers({ date: dia, onlyActive: true });
   const quota = useQuota(dia);
   // Assinante ou avulso não é mais uma escolha da pessoa na hora de marcar —
-  // vem de ter (ou não) um plano ativo no Financeiro. O servidor recalcula
-  // isso de novo ao processar a marcação; isto aqui é só pra mostrar a
-  // situação certa na tela antes de clicar.
+  // vem de ter (ou não) um plano ativo e em dia no Financeiro. Vencido ou
+  // inadimplente perde o corte de assinante até regularizar (mesma regra
+  // do BarbershopService._is_subscriber — o servidor recalcula de novo ao
+  // processar a marcação; isto aqui é só pra mostrar a situação certa na
+  // tela antes de clicar).
   const minhaMensalidade = useMyFinance();
-  const souAssinante = !!minhaMensalidade.data;
+  const inadimplente =
+    !!minhaMensalidade.data &&
+    ["overdue", "delinquent"].includes(minhaMensalidade.data.financial_status);
+  const souAssinante = !!minhaMensalidade.data && !inadimplente;
   const cobranca = usePaymentConfig();
   const credito = useCredits();
   const book = useBook();
@@ -432,6 +437,14 @@ export default function BarbershopPage() {
               <div className="alert alert-warning mt-3 mb-0">
                 Você já usou os {quota.data?.limit} cortes de assinante deste mês. Dá para marcar
                 de novo a partir do mês que vem.
+              </div>
+            )}
+            {inadimplente && (
+              <div className="alert alert-warning mt-3 mb-0">
+                Sua mensalidade está {minhaMensalidade.data?.financial_status === "delinquent"
+                  ? "em atraso"
+                  : "vencida"}. Regularize no seu perfil pra voltar a ter direito ao corte de
+                assinante — por enquanto, este corte é cobrado como avulso.
               </div>
             )}
           </div>
