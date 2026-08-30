@@ -26,6 +26,44 @@ def membership_fee() -> Decimal:
     return Decimal(str(settings.MEMBERSHIP_FEE))
 
 
+class PlanCode(models.TextChoices):
+    ASSOCIADO = "associado", "Associado"
+    BARBEARIA = "barbearia", "Mensalista Barbearia"
+
+
+def plan_price(code: str) -> Decimal:
+    """Valor do plano, de ASSOCIADO_FEE/BARBEARIA_FEE no .env.
+
+    Mesmo padrão de membership_fee(): lido a cada uso, nunca importado —
+    mudar o valor não exige mexer no código, e a mensalidade já gerada
+    fica congelada (snapshot em Due.amount).
+    """
+    if code == PlanCode.ASSOCIADO:
+        return Decimal(str(settings.ASSOCIADO_FEE))
+    if code == PlanCode.BARBEARIA:
+        return Decimal(str(settings.BARBEARIA_FEE))
+    raise ValueError(f"Plano desconhecido: {code}")
+
+
+# Postos que já foram promovidos de "Sd" pro par EP/EV, mas ainda não
+# tiveram o cadastro corrigido, ficam de fora até alguém reclassificar —
+# não dá pra adivinhar qual dos dois planos vale (RN da Fase 2).
+_UNCLASSIFIED_RANKS = frozenset({"Sd"})
+_BARBEARIA_ONLY_RANKS = frozenset({"Sd EV"})
+_BOTH_PLANS_RANKS = frozenset({"Sd EP", "Cb"})
+
+
+def eligible_plans_for(posto_graduacao: str) -> frozenset[str]:
+    """Quais PlanCode um posto pode assinar (RN da Fase 2 — ver spec)."""
+    if not posto_graduacao or posto_graduacao in _UNCLASSIFIED_RANKS:
+        return frozenset()
+    if posto_graduacao in _BARBEARIA_ONLY_RANKS:
+        return frozenset({PlanCode.BARBEARIA})
+    if posto_graduacao in _BOTH_PLANS_RANKS:
+        return frozenset({PlanCode.ASSOCIADO, PlanCode.BARBEARIA})
+    return frozenset({PlanCode.ASSOCIADO})
+
+
 class FinancialStatus(models.TextChoices):
     UP_TO_DATE = "up_to_date", "Em dia"
     PAID_IN_ADVANCE = "paid_in_advance", "Pago antecipadamente"
@@ -39,6 +77,7 @@ class BillingProfile(TenantScopedModel):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="billing_profile"
     )
+    plan = models.CharField(max_length=20, choices=PlanCode.choices)
     due_day = models.PositiveSmallIntegerField()
     started_period = models.DateField()
     is_active = models.BooleanField(default=True)

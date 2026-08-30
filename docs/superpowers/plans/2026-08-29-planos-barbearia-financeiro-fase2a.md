@@ -336,19 +336,15 @@ def test_eligible_plans_for_matches_the_matrix(posto, expected):
     assert eligible_plans_for(posto) == expected
 
 
-def test_billing_profile_backfill_set_plan_associado_on_existing_rows(tenant_a):
-    """A migração de dados do Step 5 já rodou antes da suíte — este teste
-    só confirma que um BillingProfile criado direto (como a Fase 1 fazia,
-    sem plano) não é mais possível: o campo é obrigatório agora."""
-    with use_tenant(tenant_a.id):
-        user = UserService().create_user(
-            username="membroP1", password="supersecret123",
-            role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
-        )
-        with pytest.raises(Exception):
-            BillingProfile.objects.create(
-                tenant_id=tenant_a.id, user=user, due_day=10, started_period=_period(0),
-            )
+**Desvio de execução:** um teste adicional cogitado aqui
+(`BillingProfile.objects.create(...)` sem `plan` deveria levantar erro)
+não se sustenta — `CharField` sem `default=` explícito usa `""` como
+default implícito do Django em `.create()`, sem checar `choices` (isso só
+roda em `full_clean()`, que `.create()` não chama). Não vale a pena
+enrijecer isso: `BillingProfile` só nasce de verdade via
+`FinanceService.activate_billing()` (Task 3), que sempre passa `plan`
+explicitamente — criar direto pelo model bypassa a camada de Service, algo
+que a própria arquitetura já proíbe. Sem teste extra pra isso.
 ```
 
 - [ ] **Step 9: Rodar a suíte de finance**

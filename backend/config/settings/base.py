@@ -180,3 +180,8 @@ WALK_IN_PRICE = env("WALK_IN_PRICE", default="15.00")
 MERCADOPAGO_API_BASE = env("MERCADOPAGO_API_BASE", default="")
 # Valor único da mensalidade do grêmio (módulo Financeiro).
 MEMBERSHIP_FEE = env("MEMBERSHIP_FEE", default="100.00")
+# Planos do Financeiro (Fase 2) — cada um com seu valor mensal.
+ASSOCIADO_FEE = env("ASSOCIADO_FEE", default="30.00")
+BARBEARIA_FEE = env("BARBEARIA_FEE", default="20.00")
+# Validade do link de convite pro plano Associado.
+ASSOCIADO_INVITE_DAYS = env.int("ASSOCIADO_INVITE_DAYS", default=7)

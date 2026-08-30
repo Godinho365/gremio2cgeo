@@ -17,6 +17,9 @@ from apps.finance.models import (
     DueStatus,
     FinanceCredit,
     FinancialStatus,
+    PlanCode,
+    eligible_plans_for,
+    plan_price,
 )
 from apps.finance.repositories import FinanceRepository
 from apps.finance.services import FinanceService
@@ -80,7 +83,8 @@ def test_billing_profile_and_due_models_exist(tenant_a):
             role_codes=[RoleCode.USER], tenant_id=tenant_a.id,
         )
         profile = BillingProfile.objects.create(
-            tenant_id=tenant_a.id, user=user, due_day=10, started_period=_period(0),
+            tenant_id=tenant_a.id, user=user, plan=PlanCode.ASSOCIADO,
+            due_day=10, started_period=_period(0),
         )
         due = Due.objects.create(
             tenant_id=tenant_a.id, billing_profile=profile, period=_period(0),
@@ -96,6 +100,31 @@ def test_due_date_respects_short_months():
     assert _due_date_for(date(2026, 2, 1), 31) == date(2026, 2, 28)
     assert _due_date_for(date(2026, 8, 1), 31) == date(2026, 8, 31)
     assert _due_date_for(date(2026, 8, 1), 10) == date(2026, 8, 10)
+
+
+def test_plan_price_reads_from_settings(settings):
+    settings.ASSOCIADO_FEE = "30.00"
+    settings.BARBEARIA_FEE = "20.00"
+    assert plan_price(PlanCode.ASSOCIADO) == Decimal("30.00")
+    assert plan_price(PlanCode.BARBEARIA) == Decimal("20.00")
+
+
+@pytest.mark.parametrize(
+    "posto,expected",
+    [
+        ("", frozenset()),
+        ("Sd", frozenset()),
+        ("Sd EV", frozenset({"barbearia"})),
+        ("Sd EP", frozenset({"associado", "barbearia"})),
+        ("Cb", frozenset({"associado", "barbearia"})),
+        ("Cel", frozenset({"associado"})),
+        ("ST", frozenset({"associado"})),
+    ],
+)
+def test_eligible_plans_for_matches_the_matrix(posto, expected):
+    assert eligible_plans_for(posto) == expected
+
+
 
 
 def test_activate_billing_generates_current_and_two_months_ahead(tenant_a):
