@@ -1,4 +1,11 @@
-import { IconBuildingBank, IconDownload, IconPlus } from "@tabler/icons-react";
+import {
+  IconArrowDown,
+  IconArrowUp,
+  IconBuildingBank,
+  IconDownload,
+  IconPlus,
+  IconSearch,
+} from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -14,17 +21,45 @@ import {
   useFinanceMonthlyReport,
   useGenerateInvite,
   usePendingInvites,
+  type BillingProfile,
+  type FinanceDashboard,
+  type FinancialStatus,
   type MonthlyReportRow,
   type PlanCode,
 } from "../features/finance/api";
 import { useUsers } from "../features/accounts/api";
+import type { UserRef } from "../features/accounts/api";
 import { useAuth } from "../auth/AuthContext";
 import { isAdmin } from "../auth/roles";
 
-function StatCard({ label, value }: { label: string; value: string | number }) {
+function StatCard({
+  label,
+  value,
+  onClick,
+}: {
+  label: string;
+  value: string | number;
+  onClick?: () => void;
+}) {
   return (
     <div className="col-sm-6 col-lg-3">
-      <div className="card card-sm">
+      <div
+        className="card card-sm"
+        style={onClick ? { cursor: "pointer" } : undefined}
+        role={onClick ? "button" : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        onClick={onClick}
+        onKeyDown={
+          onClick
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onClick();
+                }
+              }
+            : undefined
+        }
+      >
         <div className="card-body">
           <div className="text-secondary small">{label}</div>
           <div className="h2 mb-0">{value}</div>
@@ -332,6 +367,294 @@ function MonthlyReportSection() {
   );
 }
 
+/** Visão geral: indicadores de hoje + comparativo mensal. Clicar num card de
+ * situação leva pra aba Usuários já filtrada. */
+function DashboardTab({
+  dashboard,
+  onFiltrar,
+}: {
+  dashboard: FinanceDashboard | undefined;
+  onFiltrar: (filtro: SituacaoFilter) => void;
+}) {
+  return (
+    <>
+      {dashboard && (
+        <div className="row row-cards g-3">
+          <StatCard label="Usuários na relação" value={dashboard.total_users} />
+          <StatCard
+            label="Em dia"
+            value={dashboard.up_to_date_count}
+            onClick={() => onFiltrar("up_to_date")}
+          />
+          <StatCard
+            label="Inadimplentes"
+            value={dashboard.delinquent_count}
+            onClick={() => onFiltrar("delinquent")}
+          />
+          <StatCard
+            label="Vencidas"
+            value={dashboard.dues_overdue}
+            onClick={() => onFiltrar("overdue")}
+          />
+          <StatCard
+            label="A vencer (30 dias)"
+            value={dashboard.dues_upcoming_30_days}
+            onClick={() => onFiltrar("due_soon")}
+          />
+          <StatCard label="Valores em aberto" value={`R$ ${brl(dashboard.pending_amount)}`} />
+          <StatCard label="Crédito em aberto" value={`R$ ${brl(dashboard.advance_payments_received)}`} />
+          <StatCard label="Previsão a receber" value={`R$ ${brl(dashboard.upcoming_receivable)}`} />
+        </div>
+      )}
+      <MonthlyReportSection />
+    </>
+  );
+}
+
+type SituacaoFilter = "todos" | "sem_plano" | "desativado" | FinancialStatus;
+
+const SITUACAO_FILTER_OPTIONS: { value: SituacaoFilter; label: string }[] = [
+  { value: "todos", label: "Todas as situações" },
+  { value: "up_to_date", label: FINANCIAL_STATUS_LABEL.up_to_date },
+  { value: "paid_in_advance", label: FINANCIAL_STATUS_LABEL.paid_in_advance },
+  { value: "due_soon", label: FINANCIAL_STATUS_LABEL.due_soon },
+  { value: "due_today", label: FINANCIAL_STATUS_LABEL.due_today },
+  { value: "overdue", label: FINANCIAL_STATUS_LABEL.overdue },
+  { value: "delinquent", label: FINANCIAL_STATUS_LABEL.delinquent },
+  { value: "sem_plano", label: "Sem plano (inativo)" },
+  { value: "desativado", label: "Cobrança desativada" },
+];
+
+function situacaoKeyFor(p: BillingProfile | undefined): SituacaoFilter {
+  if (!p) return "sem_plano";
+  if (!p.is_active) return "desativado";
+  return p.financial_status;
+}
+
+function matchesSituacao(p: BillingProfile | undefined, filtro: SituacaoFilter): boolean {
+  return filtro === "todos" || situacaoKeyFor(p) === filtro;
+}
+
+const SITUACAO_RANK: Record<SituacaoFilter, number> = {
+  todos: -1,
+  sem_plano: 0,
+  up_to_date: 1,
+  paid_in_advance: 1,
+  due_soon: 2,
+  due_today: 3,
+  overdue: 4,
+  delinquent: 5,
+  desativado: 6,
+};
+
+type Row = { user: UserRef; profile: BillingProfile | undefined };
+type SortColumn = "nome" | "posto" | "plano" | "situacao" | "vencimento";
+type SortDirection = "asc" | "desc";
+
+function compareRows(a: Row, b: Row, column: SortColumn): number {
+  switch (column) {
+    case "nome":
+      return (a.user.display_name || a.user.username).localeCompare(
+        b.user.display_name || b.user.username,
+      );
+    case "posto":
+      return (a.user.posto_graduacao || "").localeCompare(b.user.posto_graduacao || "");
+    case "plano":
+      return (a.profile?.plan_label ?? "").localeCompare(b.profile?.plan_label ?? "");
+    case "situacao":
+      return SITUACAO_RANK[situacaoKeyFor(a.profile)] - SITUACAO_RANK[situacaoKeyFor(b.profile)];
+    case "vencimento":
+      return (a.profile?.due_day ?? -1) - (b.profile?.due_day ?? -1);
+  }
+}
+
+function SortHeader({
+  column,
+  sort,
+  onSort,
+  children,
+}: {
+  column: SortColumn;
+  sort: { column: SortColumn; direction: SortDirection };
+  onSort: (column: SortColumn) => void;
+  children: React.ReactNode;
+}) {
+  const ativo = sort.column === column;
+  return (
+    <th
+      role="button"
+      className="text-nowrap"
+      style={{ cursor: "pointer", userSelect: "none" }}
+      onClick={() => onSort(column)}
+    >
+      {children}
+      {ativo &&
+        (sort.direction === "asc" ? (
+          <IconArrowUp size={14} className="ms-1" />
+        ) : (
+          <IconArrowDown size={14} className="ms-1" />
+        ))}
+    </th>
+  );
+}
+
+/** Lista de membros: busca por nome/posto, filtro por situação (também
+ * chega pré-aplicado ao clicar num card do Dashboard) e colunas ordenáveis. */
+function UsersTab({
+  canManage,
+  situacaoFilter,
+  onSituacaoFilterChange,
+}: {
+  canManage: boolean;
+  situacaoFilter: SituacaoFilter;
+  onSituacaoFilterChange: (filtro: SituacaoFilter) => void;
+}) {
+  const { data: profiles, isLoading: profilesLoading } = useBillingProfiles();
+  const { data: users, isLoading: usersLoading } = useUsers();
+  const [activating, setActivating] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [sort, setSort] = useState<{ column: SortColumn; direction: SortDirection }>({
+    column: "nome",
+    direction: "asc",
+  });
+  const isLoading = profilesLoading || usersLoading;
+
+  function onSort(column: SortColumn) {
+    setSort((s) =>
+      s.column === column
+        ? { column, direction: s.direction === "asc" ? "desc" : "asc" }
+        : { column, direction: "asc" },
+    );
+  }
+
+  // Todo usuário ativo aparece aqui — com ou sem plano — não só quem já
+  // tem BillingProfile. Quem não tem plano mostra "Inativo".
+  const profileByUser = new Map((profiles ?? []).map((p) => [p.user, p]));
+  const todasAsLinhas: Row[] = (users ?? [])
+    .filter((u) => u.is_active)
+    .map((u) => ({ user: u, profile: profileByUser.get(u.id) }));
+
+  const buscaNormalizada = busca.trim().toLowerCase();
+  const linhas = todasAsLinhas
+    .filter(({ user: u, profile: p }) => {
+      if (!matchesSituacao(p, situacaoFilter)) return false;
+      if (!buscaNormalizada) return true;
+      const nome = (u.display_name || u.username).toLowerCase();
+      const posto = (u.posto_graduacao || "").toLowerCase();
+      return nome.includes(buscaNormalizada) || posto.includes(buscaNormalizada);
+    })
+    .sort((a, b) => {
+      const cmp = compareRows(a, b, sort.column);
+      return sort.direction === "asc" ? cmp : -cmp;
+    });
+
+  return (
+    <>
+      <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <div className="input-icon" style={{ maxWidth: 280 }}>
+          <span className="input-icon-addon">
+            <IconSearch size={16} />
+          </span>
+          <input
+            type="text"
+            className="form-control"
+            placeholder="Buscar por nome ou posto…"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+        </div>
+        <select
+          className="form-select w-auto"
+          value={situacaoFilter}
+          onChange={(e) => onSituacaoFilterChange(e.target.value as SituacaoFilter)}
+        >
+          {SITUACAO_FILTER_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        {canManage && (
+          <button className="btn btn-primary ms-auto" onClick={() => setActivating(true)}>
+            <IconPlus size={18} className="me-1" />
+            Ativar cobrança
+          </button>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="table-responsive">
+          <table className="table table-vcenter card-table">
+            <thead>
+              <tr>
+                <SortHeader column="nome" sort={sort} onSort={onSort}>
+                  Usuário
+                </SortHeader>
+                <SortHeader column="posto" sort={sort} onSort={onSort}>
+                  Posto/Grad.
+                </SortHeader>
+                <SortHeader column="plano" sort={sort} onSort={onSort}>
+                  Plano
+                </SortHeader>
+                <SortHeader column="situacao" sort={sort} onSort={onSort}>
+                  Situação
+                </SortHeader>
+                <SortHeader column="vencimento" sort={sort} onSort={onSort}>
+                  Vencimento
+                </SortHeader>
+                <th className="w-1" />
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading && (
+                <tr>
+                  <td colSpan={6} className="text-secondary">Carregando…</td>
+                </tr>
+              )}
+              {!isLoading && linhas.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-secondary text-center py-4">
+                    Nenhum usuário encontrado.
+                  </td>
+                </tr>
+              )}
+              {linhas.map(({ user: u, profile: p }) => (
+                <tr key={u.id}>
+                  <td>{u.display_name || u.username}</td>
+                  <td>{u.posto_graduacao || "—"}</td>
+                  <td>{p?.plan_label ?? "—"}</td>
+                  <td>
+                    {p ? (
+                      <>
+                        <span className={`badge ${FINANCIAL_STATUS_BADGE[p.financial_status]}`}>
+                          {FINANCIAL_STATUS_LABEL[p.financial_status]}
+                        </span>
+                        {!p.is_active && <span className="badge bg-secondary-lt ms-1">Desativado</span>}
+                      </>
+                    ) : (
+                      <span className="badge bg-secondary-lt">Inativo</span>
+                    )}
+                  </td>
+                  <td>{p ? `Dia ${p.due_day}` : "—"}</td>
+                  <td>
+                    {p && (
+                      <Link to={`/financeiro/${p.id}`} className="btn btn-sm btn-ghost-secondary">
+                        Ver extrato
+                      </Link>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {activating && <ActivateBillingModal onClose={() => setActivating(false)} />}
+    </>
+  );
+}
+
 function ActivateBillingModal({ onClose }: { onClose: () => void }) {
   const { data: users } = useUsers();
   const { data: profiles } = useBillingProfiles();
@@ -443,24 +766,27 @@ function ActivateBillingModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+type TabId = "dashboard" | "usuarios" | "convites";
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "usuarios", label: "Usuários" },
+  { id: "convites", label: "Convites" },
+];
+
 export default function FinancePage() {
   const { data: dashboard } = useFinanceDashboard();
-  const { data: profiles, isLoading: profilesLoading } = useBillingProfiles();
-  const { data: users, isLoading: usersLoading } = useUsers();
-  const [activating, setActivating] = useState(false);
   const { user } = useAuth();
   const canManage = isAdmin(user);
-  const isLoading = profilesLoading || usersLoading;
+  const [tab, setTab] = useState<TabId>("dashboard");
+  const [situacaoFilter, setSituacaoFilter] = useState<SituacaoFilter>("todos");
 
-  // Todo usuário ativo aparece aqui — com ou sem plano — não só quem já
-  // tem BillingProfile. Quem não tem plano mostra "Inativo".
-  const profileByUser = new Map((profiles ?? []).map((p) => [p.user, p]));
-  const rows = (users ?? [])
-    .filter((u) => u.is_active)
-    .map((u) => ({ user: u, profile: profileByUser.get(u.id) }))
-    .sort((a, b) => (a.user.display_name || a.user.username).localeCompare(
-      b.user.display_name || b.user.username,
-    ));
+  function irParaUsuarios(filtro: SituacaoFilter) {
+    setSituacaoFilter(filtro);
+    setTab("usuarios");
+  }
+
+  const abasVisiveis = TABS.filter((t) => t.id !== "convites" || canManage);
 
   return (
     <>
@@ -473,93 +799,36 @@ export default function FinancePage() {
               Sistema Financeiro
             </h2>
           </div>
-          {canManage && (
-            <div className="col-auto">
-              <button className="btn btn-primary" onClick={() => setActivating(true)}>
-                <IconPlus size={18} className="me-1" />
-                Ativar cobrança
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
-      {dashboard && (
-        <div className="row row-cards mt-3 g-3">
-          <StatCard label="Usuários na relação" value={dashboard.total_users} />
-          <StatCard label="Em dia" value={dashboard.up_to_date_count} />
-          <StatCard label="Inadimplentes" value={dashboard.delinquent_count} />
-          <StatCard label="Vencidas" value={dashboard.dues_overdue} />
-          <StatCard label="A vencer (30 dias)" value={dashboard.dues_upcoming_30_days} />
-          <StatCard label="Valores em aberto" value={`R$ ${brl(dashboard.pending_amount)}`} />
-          <StatCard label="Crédito em aberto" value={`R$ ${brl(dashboard.advance_payments_received)}`} />
-          <StatCard label="Previsão a receber" value={`R$ ${brl(dashboard.upcoming_receivable)}`} />
-        </div>
-      )}
+      <ul className="nav nav-tabs mt-3" role="tablist">
+        {abasVisiveis.map((t) => (
+          <li className="nav-item" key={t.id} role="presentation">
+            <button
+              type="button"
+              className={`nav-link${tab === t.id ? " active" : ""}`}
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          </li>
+        ))}
+      </ul>
 
-      <MonthlyReportSection />
-
-      <div className="card mt-3">
-        <div className="table-responsive">
-          <table className="table table-vcenter card-table">
-            <thead>
-              <tr>
-                <th>Usuário</th>
-                <th>Posto/Grad.</th>
-                <th>Plano</th>
-                <th>Situação</th>
-                <th>Vencimento</th>
-                <th className="w-1" />
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && (
-                <tr>
-                  <td colSpan={6} className="text-secondary">Carregando…</td>
-                </tr>
-              )}
-              {!isLoading && rows.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="text-secondary text-center py-4">
-                    Nenhum usuário cadastrado.
-                  </td>
-                </tr>
-              )}
-              {rows.map(({ user: u, profile: p }) => (
-                <tr key={u.id}>
-                  <td>{u.display_name || u.username}</td>
-                  <td>{u.posto_graduacao || "—"}</td>
-                  <td>{p?.plan_label ?? "—"}</td>
-                  <td>
-                    {p ? (
-                      <>
-                        <span className={`badge ${FINANCIAL_STATUS_BADGE[p.financial_status]}`}>
-                          {FINANCIAL_STATUS_LABEL[p.financial_status]}
-                        </span>
-                        {!p.is_active && <span className="badge bg-secondary-lt ms-1">Desativado</span>}
-                      </>
-                    ) : (
-                      <span className="badge bg-secondary-lt">Inativo</span>
-                    )}
-                  </td>
-                  <td>{p ? `Dia ${p.due_day}` : "—"}</td>
-                  <td>
-                    {p && (
-                      <Link to={`/financeiro/${p.id}`} className="btn btn-sm btn-ghost-secondary">
-                        Ver extrato
-                      </Link>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div className="mt-3">
+        {tab === "dashboard" && <DashboardTab dashboard={dashboard} onFiltrar={irParaUsuarios} />}
+        {tab === "usuarios" && (
+          <UsersTab
+            canManage={canManage}
+            situacaoFilter={situacaoFilter}
+            onSituacaoFilterChange={setSituacaoFilter}
+          />
+        )}
+        {tab === "convites" && canManage && <AssociadoInvites />}
       </div>
-
-      {canManage && <AssociadoInvites />}
-
-      {activating && <ActivateBillingModal onClose={() => setActivating(false)} />}
     </>
   );
 }
@@ -581,7 +850,7 @@ function AssociadoInvites() {
   );
 
   return (
-    <div className="card mt-3">
+    <div className="card">
       <div className="card-header">
         <h3 className="card-title">Convite para o Associado Full</h3>
       </div>
