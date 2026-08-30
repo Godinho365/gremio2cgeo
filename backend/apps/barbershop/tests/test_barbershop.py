@@ -1343,3 +1343,62 @@ def test_barbershop_client_can_still_book_a_haircut(client: APIClient):
         format="json",
     )
     assert resp.status_code == 201, resp.data
+
+
+# ── Receita de corte avulso (comparativo mensal do Financeiro) ──────────────
+
+
+def test_avulso_report_counts_paid_walkin_in_the_right_month():
+    """Agrupa por Payment.paid_at (quando o Pix caiu), não pelo horário do
+    corte — pode reservar num dia futuro e a cobrança ainda assim contar
+    pro mês certo do relatório."""
+    tenant, admin = _org("av1")
+    day = _next_weekday(2)
+    barber = _barber_with_grid(tenant, admin, weekday=2)
+    cliente = _payer(tenant, "sd_avulso1")
+    service, provedor = _service_with_fake_gateway()
+
+    with use_tenant(tenant.id):
+        ag = _marca_e_paga(service, provedor, barber, cliente, _at(day, 9))
+        assert ag.payment.status == "approved"
+        ag.payment.paid_at = timezone.make_aware(datetime(2026, 3, 15, 10, 0))
+        ag.payment.save(update_fields=["paid_at"])
+
+        report = BarbershopService().avulso_report(year=2026)
+
+    marco = report[2]
+    assert marco["period"] == date(2026, 3, 1)
+    assert marco["revenue"] == Decimal("15.00")
+    assert marco["count"] == 1
+    outros_meses = [r for i, r in enumerate(report) if i != 2]
+    assert all(r["revenue"] == Decimal("0.00") and r["count"] == 0 for r in outros_meses)
+
+
+def test_avulso_report_ignores_credit_paid_appointments():
+    """Corte pago com o próprio crédito não conta de novo — o dinheiro já
+    foi contado quando o Pix que gerou aquele crédito foi pago."""
+    tenant, admin = _org("av2")
+    day = _next_weekday(2)
+    barber = _barber_with_grid(tenant, admin, weekday=2)
+    cliente = _payer(tenant, "sd_avulso2")
+    service, provedor = _service_with_fake_gateway()
+
+    with use_tenant(tenant.id):
+        primeiro = _marca_e_paga(service, provedor, barber, cliente, _at(day, 9))
+        ano = timezone.localdate().year
+        primeiro.payment.paid_at = timezone.now()
+        primeiro.payment.save(update_fields=["paid_at"])
+        service.cancel(appointment_id=primeiro.id, actor_id=str(cliente.pk))
+
+        segundo = service.book(
+            barber_id=barber.id, customer_id=cliente.pk, start_at=_at(day, 9, 30)
+        )
+        assert segundo.paid_with_credit is True
+
+        report = BarbershopService().avulso_report(year=ano)
+
+    mes_atual = report[timezone.localdate().month - 1]
+    # Só o primeiro corte (Pix de verdade) conta — o segundo, pago com
+    # crédito, não gera Payment novo.
+    assert mes_atual["count"] == 1
+    assert mes_atual["revenue"] == Decimal("15.00")

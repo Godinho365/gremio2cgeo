@@ -332,6 +332,22 @@ export function useFinanceMonthlyReport(year: number) {
   });
 }
 
+export interface AvulsoReportRow {
+  period: string;
+  revenue: string;
+  count: number;
+}
+
+/** Receita de corte avulso (barbearia) por ano civil — Pix pago de
+ * verdade, sem assinante nem quem pagou com crédito. */
+export function useFinanceAvulsoReport(year: number) {
+  return useQuery({
+    queryKey: ["finance", "avulso-report", year],
+    queryFn: async () =>
+      (await api.get<AvulsoReportRow[]>(`/finance/dashboard/avulso?year=${year}`)).data,
+  });
+}
+
 export interface MyFinanceSummary {
   financial_status: FinancialStatus;
   plan: PlanCode;

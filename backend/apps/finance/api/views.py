@@ -196,6 +196,33 @@ class FinanceMonthlyReportView(TenantContextAPIView):
         )
 
 
+class FinanceAvulsoReportView(TenantContextAPIView):
+    """Receita de corte avulso (barbearia) por ano civil — Pix pago de
+    verdade, sem assinante (sempre grátis) nem quem pagou com crédito
+    (já reconhecido quando o crédito foi gerado). Complementa o
+    comparativo de mensalidades com a outra fonte de receita do grêmio."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        if not _can_read(request.user):
+            raise BusinessRuleError("Sem permissão para ver o financeiro.", code="forbidden")
+        raw_year = request.query_params.get("year")
+        try:
+            year = int(raw_year) if raw_year else timezone.localdate().year
+        except ValueError:
+            year = timezone.localdate().year
+        from apps.barbershop.services import BarbershopService
+
+        rows = BarbershopService().avulso_report(year=year)
+        return Response(
+            [
+                {"period": row["period"].isoformat(), "revenue": row["revenue"], "count": row["count"]}
+                for row in rows
+            ]
+        )
+
+
 class AssociadoInviteListCreateView(TenantContextAPIView):
     permission_classes = [IsAuthenticated]
     service = FinanceService()

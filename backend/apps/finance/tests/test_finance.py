@@ -899,6 +899,27 @@ def test_finance_monthly_report_requires_staff_read(client: APIClient):
     assert "by_plan" in resp.data[0]
 
 
+def test_finance_avulso_report_requires_staff_read(client: APIClient):
+    tenant, admin = _org("finapi8c")
+    with use_tenant(tenant.id):
+        plain = UserService().create_user(
+            username="plain_fin8c", password="supersecret123",
+            posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(plain)
+    assert client.get("/api/finance/dashboard/avulso").status_code == 422
+
+    client.force_authenticate(admin)
+    resp = client.get(f"/api/finance/dashboard/avulso?year={timezone.localdate().year}")
+    assert resp.status_code == 200, resp.data
+    assert len(resp.data) == 12
+    assert resp.data[0] == {
+        "period": f"{timezone.localdate().year}-01-01",
+        "revenue": Decimal("0.00"),
+        "count": 0,
+    }
+
+
 def test_finance_me_returns_own_summary_or_404(client: APIClient):
     tenant, admin = _org("finapi9")
     with use_tenant(tenant.id):

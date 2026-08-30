@@ -19,11 +19,13 @@ RN-BB11 A grade de um barbeiro pode ser replicada para outros.
 """
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -708,3 +710,33 @@ class BarbershopService(BaseService):
             actor_id=actor_id,
         )
         return appointment
+
+    def avulso_report(self, *, year: int) -> list[dict]:
+        """Receita de corte avulso por mês (ano civil) — só Pix pago de
+        verdade. Assinante nunca paga (RN-BB4), e corte pago com o próprio
+        crédito não entra de novo: esse dinheiro já foi contado quando o
+        crédito foi gerado (RN-BB9), contar aqui seria contar duas vezes.
+
+        Agrupado por Payment.paid_at (quando o Pix caiu), não pelo horário
+        do corte — é o análogo, do lado da barbearia, do "arrecadado" que
+        o Financeiro já mostra pras mensalidades.
+        """
+        report = []
+        for month in range(1, 13):
+            period = date(year, month, 1)
+            last_day = date(year, month, monthrange(year, month)[1])
+            qs = self.appointments.query().filter(
+                is_subscriber=False,
+                paid_with_credit=False,
+                payment__status=PaymentStatus.APPROVED,
+                payment__paid_at__date__gte=period,
+                payment__paid_at__date__lte=last_day,
+            )
+            report.append(
+                {
+                    "period": period,
+                    "revenue": qs.aggregate(s=Sum("price"))["s"] or Decimal("0.00"),
+                    "count": qs.count(),
+                }
+            )
+        return report

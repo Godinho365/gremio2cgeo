@@ -6,7 +6,7 @@ import {
   IconPlus,
   IconSearch,
 } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { brl } from "../features/barbershop/api";
@@ -17,6 +17,7 @@ import {
   PLAN_LABEL,
   useActivateBilling,
   useBillingProfiles,
+  useFinanceAvulsoReport,
   useFinanceDashboard,
   useFinanceMonthlyReport,
   useGenerateInvite,
@@ -233,11 +234,14 @@ function MonthlyDetail({ row, onClose }: { row: MonthlyReportRow; onClose: () =>
 }
 
 /** Comparativo por ano civil: arrecadação e situação das mensalidades de
- * cada mês — gráfico, indicadores, tabela clicável e exportação CSV. */
-function MonthlyReportSection() {
-  const [year, setYear] = useState(ANO_ATUAL);
+ * cada mês — gráfico, indicadores, tabela clicável e exportação CSV.
+ * `year` vem de cima (mesmo seletor da aba Dashboard, compartilhado com o
+ * comparativo de corte avulso logo abaixo). */
+function MonthlyReportSection({ year }: { year: number }) {
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
   const { data: rows, isLoading } = useFinanceMonthlyReport(year);
+
+  useEffect(() => setSelectedPeriod(null), [year]);
 
   const resumo = useMemo(() => {
     if (!rows || rows.length === 0) return null;
@@ -258,22 +262,8 @@ function MonthlyReportSection() {
   return (
     <div className="card mt-3">
       <div className="card-header">
-        <h3 className="card-title">Comparativo mensal</h3>
-        <div className="card-actions d-flex align-items-center gap-2">
-          <select
-            className="form-select form-select-sm w-auto"
-            value={year}
-            onChange={(e) => {
-              setYear(Number(e.target.value));
-              setSelectedPeriod(null);
-            }}
-          >
-            {YEAR_OPTIONS.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
+        <h3 className="card-title">Mensalidades</h3>
+        <div className="card-actions">
           <button
             type="button"
             className="btn btn-sm btn-outline-secondary"
@@ -369,6 +359,62 @@ function MonthlyReportSection() {
 
 /** Visão geral: indicadores de hoje + comparativo mensal. Clicar num card de
  * situação leva pra aba Usuários já filtrada. */
+/** Comparativo por ano civil de corte avulso (barbearia) — resumo +
+ * tabela mensal, mesmo ano do comparativo de mensalidades acima. */
+function AvulsoReportSection({ year }: { year: number }) {
+  const { data: rows, isLoading } = useFinanceAvulsoReport(year);
+
+  const resumo = useMemo(() => {
+    if (!rows || rows.length === 0) return null;
+    return {
+      receita: rows.reduce((s, r) => s + Number(r.revenue), 0),
+      cortes: rows.reduce((s, r) => s + r.count, 0),
+    };
+  }, [rows]);
+
+  return (
+    <div className="card mt-3">
+      <div className="card-header">
+        <h3 className="card-title">Corte avulso</h3>
+      </div>
+      {resumo && (
+        <div className="row row-cards g-3 p-3 pb-0">
+          <StatCard label={`Arrecadado em ${year}`} value={`R$ ${brl(resumo.receita)}`} />
+          <StatCard label={`Cortes avulsos em ${year}`} value={resumo.cortes} />
+        </div>
+      )}
+      <div className="card-body">
+        {isLoading && <div className="text-secondary">Carregando…</div>}
+        {rows && resumo && resumo.cortes === 0 && (
+          <div className="text-secondary">Nenhum corte avulso pago nesse ano.</div>
+        )}
+      </div>
+      {rows && resumo && resumo.cortes > 0 && (
+        <div className="table-responsive">
+          <table className="table table-vcenter card-table">
+            <thead>
+              <tr>
+                <th>Mês</th>
+                <th className="text-end">Cortes</th>
+                <th className="text-end">Receita</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.period}>
+                  <td>{mesLabel(r.period)}</td>
+                  <td className="text-end">{r.count}</td>
+                  <td className="text-end">R$ {brl(r.revenue)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DashboardTab({
   dashboard,
   onFiltrar,
@@ -376,6 +422,8 @@ function DashboardTab({
   dashboard: FinanceDashboard | undefined;
   onFiltrar: (filtro: SituacaoFilter) => void;
 }) {
+  const [year, setYear] = useState(ANO_ATUAL);
+
   return (
     <>
       {dashboard && (
@@ -401,12 +449,26 @@ function DashboardTab({
             value={dashboard.dues_upcoming_30_days}
             onClick={() => onFiltrar("due_soon")}
           />
-          <StatCard label="Valores em aberto" value={`R$ ${brl(dashboard.pending_amount)}`} />
-          <StatCard label="Crédito em aberto" value={`R$ ${brl(dashboard.advance_payments_received)}`} />
-          <StatCard label="Previsão a receber" value={`R$ ${brl(dashboard.upcoming_receivable)}`} />
         </div>
       )}
-      <MonthlyReportSection />
+
+      <div className="d-flex align-items-center gap-2 mt-3">
+        <span className="text-secondary">Ano do comparativo:</span>
+        <select
+          className="form-select form-select-sm w-auto"
+          value={year}
+          onChange={(e) => setYear(Number(e.target.value))}
+        >
+          {YEAR_OPTIONS.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <MonthlyReportSection year={year} />
+      <AvulsoReportSection year={year} />
     </>
   );
 }
