@@ -578,6 +578,51 @@ def test_update_user_rank_change_to_cabo_overrides_role(tenant_a):
     assert list(target.roles.values_list("code", flat=True)) == [RoleCode.BARBERSHOP_CLIENT]
 
 
+def test_update_user_preserves_associado_full_role_on_unrelated_edit(tenant_a):
+    """Cb com Associado Full ativo (perfil "Usuário", ver FinanceService.
+    activate_billing) não pode perder o acesso ao patrimônio só porque um
+    admin editou um campo qualquer — mesmo que a tela de edição reenvie
+    role_codes=["barbershop_client"] (é o que ela mostra pra esse posto,
+    sem saber da exceção do financeiro)."""
+    with use_tenant(tenant_a.id):
+        admin = UserService().create_user(
+            username="admin_ta_af", password="supersecret123",
+            role_codes=[RoleCode.ADMIN], tenant_id=tenant_a.id,
+        )
+        cabo = UserService().create_user(
+            username="cabo_af", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant_a.id,
+        )
+        UserService().grant_associado_access(cabo)
+        assert list(cabo.roles.values_list("code", flat=True)) == [RoleCode.USER]
+
+        UserService().update_user(
+            user=cabo, actor=admin,
+            role_codes=[RoleCode.BARBERSHOP_CLIENT], phone="(11) 98888-7777",
+        )
+        cabo.refresh_from_db()
+    assert cabo.phone == "(11) 98888-7777"
+    assert list(cabo.roles.values_list("code", flat=True)) == [RoleCode.USER]
+
+
+def test_update_user_rank_change_still_overrides_associado_full_role(tenant_a):
+    """A proteção acima não vale quando o posto muda de verdade nesta
+    chamada — promoção/rebaixamento continua recalculando o perfil normal."""
+    with use_tenant(tenant_a.id):
+        admin = UserService().create_user(
+            username="admin_ta_af2", password="supersecret123",
+            role_codes=[RoleCode.ADMIN], tenant_id=tenant_a.id,
+        )
+        cabo = UserService().create_user(
+            username="cabo_af2", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant_a.id,
+        )
+        UserService().grant_associado_access(cabo)
+        UserService().update_user(user=cabo, actor=admin, posto_graduacao="Sd EV")
+        cabo.refresh_from_db()
+    assert list(cabo.roles.values_list("code", flat=True)) == [RoleCode.BARBERSHOP_CLIENT]
+
+
 def test_update_user_cannot_self_demote_via_rank_change(tenant_a):
     with use_tenant(tenant_a.id):
         admin = UserService().create_user(

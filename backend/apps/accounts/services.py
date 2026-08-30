@@ -45,6 +45,22 @@ class UserService(BaseService):
             return [RoleCode.BARBERSHOP_CLIENT]
         return None
 
+    def grant_associado_access(self, user: User) -> None:
+        """Cb/Sd EP com Associado Full ativo passam a ter o perfil "Usuário",
+        que já reserva bens do patrimônio — chamado por FinanceService quando
+        o plano é ativado (convite ou ativação manual). Sd EV nunca chega
+        aqui: não é elegível ao Associado Full."""
+        if user.posto_graduacao not in BARBERSHOP_ONLY_RANKS:
+            return
+        user.roles.set(self.roles.by_codes([RoleCode.USER]))
+
+    def revoke_associado_access(self, user: User) -> None:
+        """Volta pro Cliente da Barbearia quando o plano ativo deixa de ser o
+        Associado Full — espelho de grant_associado_access."""
+        if user.posto_graduacao not in BARBERSHOP_ONLY_RANKS:
+            return
+        user.roles.set(self.roles.by_codes([RoleCode.BARBERSHOP_CLIENT]))
+
     @transaction.atomic
     def create_user(
         self,
@@ -126,10 +142,26 @@ class UserService(BaseService):
         # Sd/Cb só têm o perfil Cliente da Barbearia — vale mesmo que só o
         # posto tenha mudado nesta chamada, sem pedir troca de perfil.
         effective_posto = fields.get("posto_graduacao", user.posto_graduacao)
-        forced_roles = self._forced_roles_for_rank(
+        effective_posto_str = (
             effective_posto if isinstance(effective_posto, str) else user.posto_graduacao
         )
-        effective_role_codes = forced_roles if forced_roles is not None else role_codes
+        posto_changed = (
+            "posto_graduacao" in fields and fields["posto_graduacao"] != user.posto_graduacao
+        )
+        forced_roles = self._forced_roles_for_rank(effective_posto_str)
+        # Exceção: Cb/Sd EP com Associado Full ativo já tiveram o perfil
+        # trocado pra "Usuário" (ver grant_associado_access) — editar outro
+        # campo sem mexer no posto não pode desfazer isso, nem quando a tela
+        # reenvia role_codes=["barbershop_client"] (é o que ela mostra pra
+        # esse posto, sem saber da exceção do financeiro): ignora role_codes
+        # também, não só o forçamento por posto.
+        preserve_associado_full = (
+            forced_roles is not None and not posto_changed and user.has_role(RoleCode.USER)
+        )
+        if preserve_associado_full:
+            effective_role_codes = None
+        else:
+            effective_role_codes = forced_roles if forced_roles is not None else role_codes
 
         if (
             effective_role_codes is not None

@@ -382,6 +382,29 @@ def test_barbearia_plan_does_not_unlock_reservations():
             )
 
 
+def test_cb_with_associado_full_can_book_via_api(client: APIClient):
+    """Cb nasce Cliente da Barbearia (barrado pela permissão da view antes
+    mesmo do BusinessRuleError). Ativar o Associado Full troca o perfil pra
+    Usuário (FinanceService.activate_billing → UserService.grant_associado_
+    access) — a reserva passa a funcionar pela API de ponta a ponta, não só
+    pelo service direto como em test_barbearia_plan_does_not_unlock_reservations."""
+    tenant, admin = _org("bk16")
+    asset = _asset(tenant)
+    with use_tenant(tenant.id):
+        cb = UserService().create_user(
+            username="cb16", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant.id,
+        )
+    _make_associado(tenant, cb)
+    client.force_authenticate(cb)
+    resp = client.post(
+        "/api/bookings",
+        {"asset": str(asset.id), "start_at": _dt(17, 10), "end_at": _dt(17, 12)},
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+
+
 def test_delinquent_associado_cannot_book(client: APIClient):
     from apps.finance.models import BillingProfile, FinancialStatus
 

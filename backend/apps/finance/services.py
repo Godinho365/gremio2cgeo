@@ -13,6 +13,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.accounts.services import UserService
 from apps.payments.models import Payment, PaymentStatus
 from apps.payments.repositories import PaymentRepository
 from apps.payments.services import PaymentService
@@ -70,6 +71,7 @@ class FinanceService(BaseService):
         credits: FinanceCreditRepository | None = None,
         invites: AssociadoInviteRepository | None = None,
         payment_gateway: PaymentService | None = None,
+        users: UserService | None = None,
     ) -> None:
         self.profiles = profiles or FinanceRepository()
         self.dues = dues or DueRepository()
@@ -77,6 +79,7 @@ class FinanceService(BaseService):
         self.invites = invites or AssociadoInviteRepository()
         self.credits = credits or FinanceCreditRepository()
         self.payment_gateway = payment_gateway or PaymentService()
+        self.users = users or UserService()
 
     def _assert_eligible(self, user: User, plan: str) -> None:
         if plan not in eligible_plans_for(user.posto_graduacao):
@@ -156,6 +159,13 @@ class FinanceService(BaseService):
             raise BusinessRuleError(
                 "Dia de vencimento deve ser entre 1 e 31.", code="invalid_due_day"
             )
+        # Cb/Sd EP: Associado Full libera o patrimônio (perfil "Usuário");
+        # qualquer outro plano mantém/retoma o Cliente da Barbearia. Sd EV
+        # nunca chega no ramo ASSOCIADO — _assert_eligible já barrou acima.
+        if plan == PlanCode.ASSOCIADO:
+            self.users.grant_associado_access(user)
+        else:
+            self.users.revoke_associado_access(user)
         started_period = _first_of_month(started_period)
         existing = self.profiles.profile_for_user(user.pk)
         if existing is not None:

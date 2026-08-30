@@ -978,12 +978,65 @@ def test_accept_associado_invite_activates_the_associado_plan(tenant_a):
             username="cabo_aceita", password="supersecret123",
             posto_graduacao="Cb", tenant_id=tenant_a.id,
         )
+        assert cabo.has_role(RoleCode.BARBERSHOP_CLIENT)
         invite = FinanceService().generate_associado_invite(user=cabo)
         profile = FinanceService().accept_associado_invite(token=invite.token, actor=cabo)
         invite.refresh_from_db()
+        cabo.refresh_from_db()
     assert profile.plan == PlanCode.ASSOCIADO
     assert profile.is_active is True
     assert invite.used_at is not None
+    # Aceitar o convite troca o perfil de acesso: Cliente da Barbearia (sem
+    # patrimônio) vira Usuário (já reserva bens) — RN da correção reportada.
+    assert list(cabo.roles.values_list("code", flat=True)) == [RoleCode.USER]
+
+
+def test_activate_billing_associado_full_grants_patrimonio_access(tenant_a):
+    """Mesma troca de perfil, agora pela ativação direta do administrador
+    (sem passar por convite) — os dois caminhos usam activate_billing."""
+    with use_tenant(tenant_a.id):
+        for posto in ("Cb", "Sd EP"):
+            membro = UserService().create_user(
+                username=f"associado_full_{posto.lower().replace(' ', '')}",
+                password="supersecret123", posto_graduacao=posto, tenant_id=tenant_a.id,
+            )
+            assert membro.has_role(RoleCode.BARBERSHOP_CLIENT)
+            FinanceService().activate_billing(
+                user=membro, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0),
+            )
+            membro.refresh_from_db()
+            assert list(membro.roles.values_list("code", flat=True)) == [RoleCode.USER]
+
+
+def test_activate_billing_barbearia_plan_keeps_cb_as_barbershop_client(tenant_a):
+    """Assinatura Barbearia não dá acesso ao patrimônio — Cb continua
+    Cliente da Barbearia mesmo depois de ativar o plano."""
+    with use_tenant(tenant_a.id):
+        cabo = UserService().create_user(
+            username="cabo_so_barbearia", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(
+            user=cabo, plan=PlanCode.BARBEARIA, due_day=10, started_period=_period(0),
+        )
+        cabo.refresh_from_db()
+    assert list(cabo.roles.values_list("code", flat=True)) == [RoleCode.BARBERSHOP_CLIENT]
+
+
+def test_activate_billing_does_not_touch_roles_outside_forced_ranks(tenant_a):
+    """Postos que nunca foram forçados pro Cliente da Barbearia não têm o
+    perfil mexido pela ativação do Associado Full — grant/revoke são
+    no-op fora de Cb/Sd EP/Sd EV."""
+    with use_tenant(tenant_a.id):
+        coronel = UserService().create_user(
+            username="coronel_associado", password="supersecret123",
+            posto_graduacao="Cel", role_codes=[RoleCode.DIRECTOR], tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(
+            user=coronel, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0),
+        )
+        coronel.refresh_from_db()
+    assert list(coronel.roles.values_list("code", flat=True)) == [RoleCode.DIRECTOR]
 
 
 def test_accept_associado_invite_rejects_someone_elses_token(tenant_a):
