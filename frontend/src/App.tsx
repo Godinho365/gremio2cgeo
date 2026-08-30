@@ -31,6 +31,7 @@ import InventoryPage from "./pages/InventoryPage";
 import LoginPage from "./pages/LoginPage";
 import ModulesPage from "./pages/ModulesPage";
 import ProfilePage from "./pages/ProfilePage";
+import PublicAgendaPage from "./pages/PublicAgendaPage";
 import SignupPage from "./pages/SignupPage";
 import UsersPage from "./pages/UsersPage";
 
@@ -45,6 +46,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
+      {/* Sem login de propósito — link pra barbeiro sem conta no sistema ver a agenda de hoje. */}
+      <Route path="/barbearia/agenda-publica/:token" element={<PublicAgendaPage />} />
       <Route element={<RequireAuth />}>
         {/* Seleção de módulo fica fora do Layout: é a antessala de quem administra. */}
         <Route element={<RequireRole roles={MODULE_CHOOSER_ROLES} />}>

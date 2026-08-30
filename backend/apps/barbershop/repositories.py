@@ -14,6 +14,7 @@ from .models import (
     Barber,
     BarberSchedule,
     BarberTimeOff,
+    PublicAgendaLink,
 )
 
 
@@ -64,6 +65,13 @@ class BarberTimeOffRepository(BaseRepository[BarberTimeOff]):
         if exclude_id is not None:
             qs = qs.exclude(id=exclude_id)
         return qs
+
+
+class PublicAgendaLinkRepository(BaseRepository[PublicAgendaLink]):
+    model = PublicAgendaLink
+
+    def active(self) -> models.QuerySet[PublicAgendaLink]:
+        return self.query().filter(is_active=True)
 
 
 class AppointmentRepository(BaseRepository[Appointment]):

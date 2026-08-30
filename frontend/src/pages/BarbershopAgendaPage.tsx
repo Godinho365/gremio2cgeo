@@ -1,14 +1,22 @@
-import { IconChevronLeft, IconChevronRight, IconUserOff, IconX } from "@tabler/icons-react";
-import { useState } from "react";
+import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconLink,
+  IconUserOff,
+  IconX,
+} from "@tabler/icons-react";
+import { useEffect, useState } from "react";
 
 import {
   APPOINTMENT_STATUS_META,
   brl,
-  type Appointment,
   useAppointments,
   useBarbers,
   useCancelAppointment,
   useFinishAppointment,
+  useGeneratePublicAgendaLink,
+  useRegeneratePublicAgendaLink,
+  type Appointment,
 } from "../features/barbershop/api";
 import { addDays, dateStr } from "../lib/dates";
 
@@ -43,10 +51,95 @@ function Stat({ label, value, cls }: { label: string; value: number | string; cl
   );
 }
 
+function PublicAgendaLinkModal({ onClose }: { onClose: () => void }) {
+  const generate = useGeneratePublicAgendaLink();
+  const regenerate = useRegeneratePublicAgendaLink();
+  const [token, setToken] = useState<string | null>(null);
+  const [copiado, setCopiado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    generate
+      .mutateAsync()
+      .then((r) => setToken(r.token))
+      .catch((err) => setErro(erroDe(err, "Não foi possível gerar o link.")));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const url = token ? `${window.location.origin}/barbearia/agenda-publica/${token}` : "";
+
+  async function copiar() {
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2500);
+  }
+
+  async function regenerar() {
+    if (!confirm("Gerar um novo link? O link atual para de funcionar na hora.")) return;
+    setErro(null);
+    try {
+      const r = await regenerate.mutateAsync();
+      setToken(r.token);
+      setCopiado(false);
+    } catch (err) {
+      setErro(erroDe(err, "Não foi possível gerar um novo link."));
+    }
+  }
+
+  return (
+    <>
+      <div className="modal modal-blur show d-block" tabIndex={-1}>
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Link público da agenda</h5>
+              <button type="button" className="btn-close" onClick={onClose} />
+            </div>
+            <div className="modal-body">
+              {erro && <div className="alert alert-danger">{erro}</div>}
+              <p className="text-secondary">
+                Qualquer pessoa com esse link vê a agenda de hoje (todos os barbeiros), sem
+                precisar entrar no sistema — nome do cliente e horário. Compartilhe só com
+                quem deve ver.
+              </p>
+              {url ? (
+                <div className="input-group">
+                  <input type="text" className="form-control" value={url} readOnly />
+                  <button type="button" className="btn btn-outline-secondary" onClick={copiar}>
+                    {copiado ? "Copiado!" : "Copiar"}
+                  </button>
+                </div>
+              ) : (
+                <div className="text-secondary">Gerando link…</div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-outline-danger me-auto"
+                onClick={() => void regenerar()}
+                disabled={regenerate.isPending || !token}
+              >
+                {regenerate.isPending ? "Gerando…" : "Gerar novo link"}
+              </button>
+              <button type="button" className="btn btn-primary" onClick={onClose}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
 export default function BarbershopAgendaPage() {
   const [dia, setDia] = useState(dateStr(new Date()));
   const [barbeiro, setBarbeiro] = useState("");
   const [erro, setErro] = useState<string | null>(null);
+  const [linkAberto, setLinkAberto] = useState(false);
 
   const barbers = useBarbers();
   const finish = useFinishAppointment();
@@ -99,6 +192,10 @@ export default function BarbershopAgendaPage() {
           </div>
           <div className="col-auto ms-auto">
             <div className="btn-list flex-nowrap align-items-center">
+              <button className="btn btn-outline-primary" onClick={() => setLinkAberto(true)}>
+                <IconLink size={18} className="me-1" />
+                Link público
+              </button>
               <button
                 className="btn btn-icon btn-ghost-secondary"
                 title="Dia anterior"
@@ -234,6 +331,8 @@ export default function BarbershopAgendaPage() {
           </table>
         </div>
       </div>
+
+      {linkAberto && <PublicAgendaLinkModal onClose={() => setLinkAberto(false)} />}
     </>
   );
 }

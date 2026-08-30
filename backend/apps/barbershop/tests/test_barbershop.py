@@ -1402,3 +1402,112 @@ def test_avulso_report_ignores_credit_paid_appointments():
     # crédito, não gera Payment novo.
     assert mes_atual["count"] == 1
     assert mes_atual["revenue"] == Decimal("15.00")
+
+
+# ── Agenda pública (sem login) ───────────────────────────────────────────────
+
+
+def _marca_e_paga_hoje(service, provedor, barber, cliente, day):
+    """Marcar exige horário futuro (RN-BB3) — marca daqui a uma semana
+    (mesmo dia da semana da grade) e realoca pra hoje, só pra testar o
+    filtro "agenda de hoje" sem depender de que horário é agora."""
+    ag = _marca_e_paga(service, provedor, barber, cliente, _at(_next_weekday(day.weekday()), 9))
+    duracao = ag.end_at - ag.start_at
+    novo_inicio = timezone.make_aware(datetime.combine(day, time(9, 0)))
+    ag.start_at = novo_inicio
+    ag.end_at = novo_inicio + duracao
+    ag.save(update_fields=["start_at", "end_at"])
+    return ag
+
+
+def test_public_agenda_link_requires_manager(client: APIClient):
+    tenant, admin = _org("pub1")
+    with use_tenant(tenant.id):
+        comum = UserService().create_user(
+            username="comum_pub1", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(comum)
+    assert client.post("/api/barbershop/agenda-publica").status_code == 422
+
+    client.force_authenticate(admin)
+    resp = client.post("/api/barbershop/agenda-publica")
+    assert resp.status_code == 200, resp.data
+    assert resp.data["token"]
+
+
+def test_public_agenda_link_is_reused_not_recreated(client: APIClient):
+    tenant, admin = _org("pub2")
+    client.force_authenticate(admin)
+    primeiro = client.post("/api/barbershop/agenda-publica").data["token"]
+    segundo = client.post("/api/barbershop/agenda-publica").data["token"]
+    assert primeiro == segundo
+
+
+def test_regenerating_public_agenda_link_revokes_the_old_one(client: APIClient):
+    tenant, admin = _org("pub3")
+    client.force_authenticate(admin)
+    antigo = client.post("/api/barbershop/agenda-publica").data["token"]
+    novo = client.patch("/api/barbershop/agenda-publica").data["token"]
+
+    assert novo != antigo
+    assert client.get(f"/api/barbershop/agenda-publica/{antigo}").status_code == 422
+    assert client.get(f"/api/barbershop/agenda-publica/{novo}").status_code == 200
+
+
+def test_public_agenda_view_shows_todays_appointments_without_login():
+    """Sem force_authenticate de propósito — é exatamente o que um barbeiro
+    sem conta no sistema faria: abrir o link puro."""
+    tenant, admin = _org("pub4")
+    day = timezone.localdate()
+    barber = _barber_with_grid(tenant, admin, weekday=day.weekday())
+    cliente = _payer(tenant, "sd_pub4")
+    service, provedor = _service_with_fake_gateway()
+
+    with use_tenant(tenant.id):
+        _marca_e_paga_hoje(service, provedor, barber, cliente, day)
+        link = service.get_or_create_public_agenda_link(actor_id=str(admin.pk))
+
+    anon = APIClient()
+    resp = anon.get(f"/api/barbershop/agenda-publica/{link.token}")
+    assert resp.status_code == 200, resp.data
+    assert resp.data["date"] == day
+    assert len(resp.data["appointments"]) == 1
+    entry = resp.data["appointments"][0]
+    assert entry["barber_name"] == "Zé da Navalha"
+    assert "sd_pub4" in entry["customer_name"] or entry["customer_name"]
+    assert entry["start_at"]
+    assert entry["status_label"]
+    # Não vaza preço nem dado de pagamento — só o essencial pro barbeiro.
+    assert "price" not in entry
+    assert "payment" not in entry
+
+
+def test_public_agenda_view_rejects_unknown_token():
+    resp = APIClient().get("/api/barbershop/agenda-publica/token-que-nao-existe")
+    assert resp.status_code == 422, resp.data
+
+
+def test_public_agenda_view_is_tenant_isolated():
+    tenant_a, admin_a = _org("pub5a")
+    tenant_b, admin_b = _org("pub5b")
+    day = timezone.localdate()
+    barber_a = _barber_with_grid(tenant_a, admin_a, weekday=day.weekday())
+    barber_b = _barber_with_grid(tenant_b, admin_b, weekday=day.weekday())
+    cliente_a = _payer(tenant_a, "sd_pub5a")
+    cliente_b = _payer(tenant_b, "sd_pub5b")
+    service, provedor = _service_with_fake_gateway()
+
+    with use_tenant(tenant_a.id):
+        _marca_e_paga_hoje(service, provedor, barber_a, cliente_a, day)
+        link_a = service.get_or_create_public_agenda_link(actor_id=str(admin_a.pk))
+    with use_tenant(tenant_b.id):
+        _marca_e_paga_hoje(service, provedor, barber_b, cliente_b, day)
+
+    resp = APIClient().get(f"/api/barbershop/agenda-publica/{link_a.token}")
+    assert resp.status_code == 200, resp.data
+    # Só o corte do tenant A — o do tenant B não vaza, mesmo hoje/mesmo barbeiro homônimo.
+    assert len(resp.data["appointments"]) == 1
+    assert resp.data["appointments"][0]["customer_name"] and "sd_pub5b" not in str(
+        resp.data["appointments"][0]
+    )

@@ -6,13 +6,14 @@ from datetime import date, datetime
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.accounts.models import RoleCode
 from core.exceptions import BusinessRuleError
-from core.viewsets import TenantScopedViewSet
+from core.viewsets import TenantContextAPIView, TenantScopedViewSet
 
 from ..models import Appointment, AppointmentStatus, Barber
 from ..services import BarbershopService
@@ -284,3 +285,36 @@ class AppointmentViewSet(TenantScopedViewSet):
             customer_id=customer_id or str(request.user.pk), day=day
         )
         return Response(QuotaSerializer(quota).data)
+
+
+class PublicAgendaLinkView(TenantContextAPIView):
+    """Gera/consulta o link público da agenda do dia — só a administração
+    da barbearia. `POST` cria (ou reaproveita) o link atual; `PATCH`
+    revoga o antigo e gera um novo."""
+
+    permission_classes = [IsAuthenticated]
+    service = BarbershopService()
+
+    def post(self, request: Request) -> Response:
+        _require_manager(request.user, "gerar o link público da agenda")
+        link = self.service.get_or_create_public_agenda_link(actor_id=str(request.user.pk))
+        return Response({"token": link.token})
+
+    def patch(self, request: Request) -> Response:
+        _require_manager(request.user, "regenerar o link público da agenda")
+        link = self.service.regenerate_public_agenda_link(actor_id=str(request.user.pk))
+        return Response({"token": link.token})
+
+
+class PublicAgendaView(APIView):
+    """Agenda do dia sem login — o tenant vem do token da URL (RN-BB12).
+    Não usa TenantContextAPIView de propósito: não há usuário autenticado
+    aqui, então não há tenant de sessão pra fixar."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request: Request, token: str = "") -> Response:
+        agenda = BarbershopService.today_agenda_by_token(token=token)
+        if agenda is None:
+            raise BusinessRuleError("Link inválido ou revogado.", code="invalid_public_link")
+        return Response(agenda)

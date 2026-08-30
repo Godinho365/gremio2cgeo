@@ -1,4 +1,4 @@
-"""BarbershopService — regras da barbearia (RN-BB1..BB7).
+"""BarbershopService — regras da barbearia (RN-BB1..BB12).
 
 RN-BB1  Dois agendamentos ativos nunca se sobrepõem para o mesmo barbeiro.
 RN-BB2  Só dá para marcar num horário que existe na grade do barbeiro e fora de folga.
@@ -16,6 +16,8 @@ RN-BB9  Cancelar um horário já pago vira crédito no perfil, e o crédito paga
         o próximo corte sem passar pelo Pix.
 RN-BB10 Folga é um período; dois períodos do mesmo barbeiro não se sobrepõem.
 RN-BB11 A grade de um barbeiro pode ser replicada para outros.
+RN-BB12 Agenda pública (sem login) mostra só o dia de hoje, todos os
+        barbeiros; um link por organização, revogável a qualquer momento.
 """
 from __future__ import annotations
 
@@ -47,6 +49,7 @@ from .models import (
     AppointmentStatus,
     Barber,
     BarberSchedule,
+    PublicAgendaLink,
     walk_in_price,
 )
 from .repositories import (
@@ -54,6 +57,7 @@ from .repositories import (
     BarberRepository,
     BarberScheduleRepository,
     BarberTimeOffRepository,
+    PublicAgendaLinkRepository,
 )
 
 # Situações em que o horário ainda pode ser remarcado ou cancelado.
@@ -67,6 +71,20 @@ _FAILED_PAYMENT_STATUSES = (
 )
 
 
+def _public_agenda_entry(appointment: Appointment) -> dict:
+    """Projeção mínima pro link público — sem preço, pagamento nem
+    is_subscriber: quem abre o link não precisa (nem deveria) ver isso."""
+    status = BarbershopService.effective_status(appointment)
+    return {
+        "barber_name": appointment.barber.nickname or appointment.barber.name,
+        "customer_name": appointment.customer.display_name,
+        "start_at": appointment.start_at,
+        "end_at": appointment.end_at,
+        "status": status,
+        "status_label": AppointmentStatus(status).label,
+    }
+
+
 class BarbershopService(BaseService):
     def __init__(
         self,
@@ -77,6 +95,7 @@ class BarbershopService(BaseService):
         payments: PaymentService | None = None,
         credits: CreditService | None = None,
         finance_profiles: FinanceRepository | None = None,
+        public_agenda_links: PublicAgendaLinkRepository | None = None,
     ) -> None:
         self.barbers = barbers or BarberRepository()
         self.schedules = schedules or BarberScheduleRepository()
@@ -85,6 +104,7 @@ class BarbershopService(BaseService):
         self.payments = payments or PaymentService()
         self.credits = credits or CreditService()
         self.finance_profiles = finance_profiles or FinanceRepository()
+        self.public_agenda_links = public_agenda_links or PublicAgendaLinkRepository()
 
     # Vencido ou inadimplente perde o corte de assinante até regularizar —
     # continua elegível a avulso normalmente (RN-BB4).
@@ -740,3 +760,55 @@ class BarbershopService(BaseService):
                 }
             )
         return report
+
+    # ── Agenda pública (RN-BB12) ─────────────────────────────────────────────
+
+    def get_or_create_public_agenda_link(self, *, actor_id: str) -> PublicAgendaLink:
+        """Um link por organização — reaproveita o ativo se já existir."""
+        existing = self.public_agenda_links.active().first()
+        if existing is not None:
+            return existing
+        link = self.public_agenda_links.create()
+        audit.record(
+            action="barbershop.public_agenda_link_created",
+            entity_type="PublicAgendaLink",
+            entity_id=link.id,
+            actor_id=actor_id,
+        )
+        return link
+
+    @transaction.atomic
+    def regenerate_public_agenda_link(self, *, actor_id: str) -> PublicAgendaLink:
+        """Revoga o link atual e gera um novo — quem tinha o link antigo
+        perde o acesso na hora."""
+        self.public_agenda_links.active().update(is_active=False)
+        link = self.public_agenda_links.create()
+        audit.record(
+            action="barbershop.public_agenda_link_regenerated",
+            entity_type="PublicAgendaLink",
+            entity_id=link.id,
+            actor_id=actor_id,
+        )
+        return link
+
+    @staticmethod
+    def today_agenda_by_token(*, token: str) -> dict | None:
+        """Agenda pública do dia — sem login, o tenant vem do token, nunca
+        de sessão. `None` se o token não existe ou foi revogado; o token é
+        globalmente único, então essa é a única consulta do módulo que não
+        passa por `for_current_tenant()` (não há tenant ainda pra filtrar).
+        """
+        link = PublicAgendaLink.objects.filter(token=token, is_active=True).first()
+        if link is None:
+            return None
+        with use_tenant(link.tenant_id):
+            today = timezone.localdate()
+            appointments = (
+                AppointmentRepository()
+                .query()
+                .filter(start_at__date=today)
+                .exclude(status=AppointmentStatus.CANCELLED)
+                .select_related("barber", "customer")
+                .order_by("start_at")
+            )
+            return {"date": today, "appointments": [_public_agenda_entry(a) for a in appointments]}

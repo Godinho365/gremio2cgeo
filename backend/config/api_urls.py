@@ -16,7 +16,12 @@ from apps.assets.api.views import (
     LocationViewSet,
     SupplierViewSet,
 )
-from apps.barbershop.api.views import AppointmentViewSet, BarberViewSet
+from apps.barbershop.api.views import (
+    AppointmentViewSet,
+    BarberViewSet,
+    PublicAgendaLinkView,
+    PublicAgendaView,
+)
 from apps.custody.api.views import CustodyViewSet
 from apps.finance.api.views import (
     AssociadoInviteAcceptView,
@@ -60,6 +65,16 @@ router.register("billing-profiles", BillingProfileViewSet, basename="billingprof
 router.register("dues", DueViewSet, basename="due")
 
 urlpatterns = [
+    path(
+        "barbershop/agenda-publica",
+        PublicAgendaLinkView.as_view(),
+        name="barbershop_public_agenda_link",
+    ),
+    path(
+        "barbershop/agenda-publica/<str:token>",
+        PublicAgendaView.as_view(),
+        name="barbershop_public_agenda",
+    ),
     path(
         "webhooks/mercadopago",
         MercadoPagoWebhookView.as_view(),

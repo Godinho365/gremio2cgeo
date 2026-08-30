@@ -5,6 +5,7 @@ mesmo barbeiro. Regras de assinante e preço vivem no BarbershopService.
 """
 from __future__ import annotations
 
+import secrets
 from decimal import Decimal
 
 from django.conf import settings
@@ -155,3 +156,22 @@ class Appointment(TenantScopedModel):
 
     def __str__(self) -> str:
         return f"{self.barber} {self.start_at:%d/%m %H:%M}"
+
+
+def _gen_public_agenda_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
+class PublicAgendaLink(TenantScopedModel):
+    """Link público (sem login) pra qualquer barbeiro ver a agenda do dia —
+    um por organização. Regenerar desativa o token antigo na hora (RN-BB12,
+    ver BarbershopService.regenerate_public_agenda_link)."""
+
+    token = models.CharField(max_length=64, unique=True, default=_gen_public_agenda_token)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "barbershop_public_agenda_link"
+
+    def __str__(self) -> str:
+        return f"Agenda pública — {self.tenant_id}"

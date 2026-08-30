@@ -401,3 +401,47 @@ export function useFinishAppointment() {
     onSuccess: () => invalidateBooking(qc),
   });
 }
+
+// ── Agenda pública (sem login) ───────────────────────────────────────────────
+
+/** Gera (ou reaproveita) o link público — POST é idempotente: chamar de
+ * novo devolve o mesmo token enquanto ele não for revogado. */
+export function useGeneratePublicAgendaLink() {
+  return useMutation({
+    mutationFn: async () => (await api.post<{ token: string }>("/barbershop/agenda-publica")).data,
+  });
+}
+
+/** Revoga o link atual e gera um novo — quem tinha o antigo perde o acesso na hora. */
+export function useRegeneratePublicAgendaLink() {
+  return useMutation({
+    mutationFn: async () =>
+      (await api.patch<{ token: string }>("/barbershop/agenda-publica")).data,
+  });
+}
+
+export interface PublicAgendaEntry {
+  barber_name: string;
+  customer_name: string;
+  start_at: string;
+  end_at: string;
+  status: string;
+  status_label: string;
+}
+
+export interface PublicAgenda {
+  date: string;
+  appointments: PublicAgendaEntry[];
+}
+
+/** Sem login — o tenant vem do token, não de sessão. Atualiza sozinha de
+ * tempos em tempos, pra quem deixa a tela aberta no balcão. */
+export function usePublicAgenda(token: string) {
+  return useQuery({
+    queryKey: ["barbershop", "public-agenda", token],
+    queryFn: async () => (await api.get<PublicAgenda>(`/barbershop/agenda-publica/${token}`)).data,
+    enabled: !!token,
+    retry: false,
+    refetchInterval: 30_000,
+  });
+}
