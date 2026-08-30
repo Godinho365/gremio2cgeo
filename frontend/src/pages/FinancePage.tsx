@@ -13,7 +13,6 @@ import {
   useFinanceDashboard,
   useGenerateInvite,
   usePendingInvites,
-  type BillingProfile,
   type PlanCode,
 } from "../features/finance/api";
 import { useUsers } from "../features/accounts/api";
@@ -160,10 +159,22 @@ function ActivateBillingModal({ onClose }: { onClose: () => void }) {
 
 export default function FinancePage() {
   const { data: dashboard } = useFinanceDashboard();
-  const { data: profiles, isLoading } = useBillingProfiles();
+  const { data: profiles, isLoading: profilesLoading } = useBillingProfiles();
+  const { data: users, isLoading: usersLoading } = useUsers();
   const [activating, setActivating] = useState(false);
   const { user } = useAuth();
   const canManage = isAdmin(user);
+  const isLoading = profilesLoading || usersLoading;
+
+  // Todo usuário ativo aparece aqui — com ou sem plano — não só quem já
+  // tem BillingProfile. Quem não tem plano mostra "Inativo".
+  const profileByUser = new Map((profiles ?? []).map((p) => [p.user, p]));
+  const rows = (users ?? [])
+    .filter((u) => u.is_active)
+    .map((u) => ({ user: u, profile: profileByUser.get(u.id) }))
+    .sort((a, b) => (a.user.display_name || a.user.username).localeCompare(
+      b.user.display_name || b.user.username,
+    ));
 
   return (
     <>
@@ -219,29 +230,37 @@ export default function FinancePage() {
                   <td colSpan={6} className="text-secondary">Carregando…</td>
                 </tr>
               )}
-              {!isLoading && (profiles ?? []).length === 0 && (
+              {!isLoading && rows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="text-secondary text-center py-4">
-                    Nenhum usuário na relação financeira ainda.
+                    Nenhum usuário cadastrado.
                   </td>
                 </tr>
               )}
-              {(profiles ?? []).map((p: BillingProfile) => (
-                <tr key={p.id}>
-                  <td>{p.user_name}</td>
-                  <td>{p.user_posto || "—"}</td>
-                  <td>{p.plan_label}</td>
+              {rows.map(({ user: u, profile: p }) => (
+                <tr key={u.id}>
+                  <td>{u.display_name || u.username}</td>
+                  <td>{u.posto_graduacao || "—"}</td>
+                  <td>{p?.plan_label ?? "—"}</td>
                   <td>
-                    <span className={`badge ${FINANCIAL_STATUS_BADGE[p.financial_status]}`}>
-                      {FINANCIAL_STATUS_LABEL[p.financial_status]}
-                    </span>
-                    {!p.is_active && <span className="badge bg-secondary-lt ms-1">Desativado</span>}
+                    {p ? (
+                      <>
+                        <span className={`badge ${FINANCIAL_STATUS_BADGE[p.financial_status]}`}>
+                          {FINANCIAL_STATUS_LABEL[p.financial_status]}
+                        </span>
+                        {!p.is_active && <span className="badge bg-secondary-lt ms-1">Desativado</span>}
+                      </>
+                    ) : (
+                      <span className="badge bg-secondary-lt">Inativo</span>
+                    )}
                   </td>
-                  <td>Dia {p.due_day}</td>
+                  <td>{p ? `Dia ${p.due_day}` : "—"}</td>
                   <td>
-                    <Link to={`/financeiro/${p.id}`} className="btn btn-sm btn-ghost-secondary">
-                      Ver extrato
-                    </Link>
+                    {p && (
+                      <Link to={`/financeiro/${p.id}`} className="btn btn-sm btn-ghost-secondary">
+                        Ver extrato
+                      </Link>
+                    )}
                   </td>
                 </tr>
               ))}
