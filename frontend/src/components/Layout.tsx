@@ -67,7 +67,16 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const roles = user?.roles ?? [];
-  const currentModule = moduleForPath(location.pathname);
+  // "/perfil" não pertence a nenhum módulo — ao visitar o próprio perfil, o
+  // rail deve continuar mostrando o módulo em que a pessoa já estava, não
+  // pular para o Patrimônio (fallback padrão de moduleForPath).
+  const [currentModule, setCurrentModule] = useState<ModuleId>(() =>
+    moduleForPath(location.pathname),
+  );
+  useEffect(() => {
+    if (location.pathname === "/perfil") return;
+    setCurrentModule(moduleForPath(location.pathname));
+  }, [location.pathname]);
   const escolheModulo = canChooseModule(user);
   const permitido = (n: Nav) => !n.roles || n.roles.some((r) => roles.includes(r));
   // Quem administra vê o menu do módulo atual; o usuário comum vê um menu só.
