@@ -97,6 +97,15 @@ export interface Due {
   paid_at: string | null;
 }
 
+/** "agosto de 2026" a partir de um period ISO ("2026-08-01"). */
+export function periodLabel(iso: string): string {
+  const [year, month] = iso.split("-");
+  return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("pt-BR", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
 interface Paginated<T> {
   results: T[];
   count: number;
@@ -351,5 +360,14 @@ export function useMyFinance() {
         throw err;
       }
     },
+  });
+}
+
+/** Extrato de mensalidades de quem está logado — próprio perfil, sem
+ * depender de acesso ao Financeiro (staff-only). Lista vazia = nunca teve plano. */
+export function useMyDues() {
+  return useQuery({
+    queryKey: ["finance", "me", "dues"],
+    queryFn: async () => (await api.get<Due[]>("/finance/me/mensalidades")).data,
   });
 }

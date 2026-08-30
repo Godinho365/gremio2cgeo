@@ -270,6 +270,22 @@ class MyFinanceView(TenantContextAPIView):
         return Response(self.service.summary_for(profile))
 
 
+class MyDuesView(TenantContextAPIView):
+    """Extrato de mensalidades de quem está logado — próprio perfil, sem
+    depender de acesso ao Financeiro (`/api/dues` é staff-only). Mostra o
+    histórico completo, mesmo se a cobrança for desativada depois."""
+
+    permission_classes = [IsAuthenticated]
+    service = FinanceService()
+
+    def get(self, request: Request) -> Response:
+        profile = self.service.profiles.profile_for_user(request.user.pk)
+        if profile is None:
+            return Response([])
+        dues = self.service.dues.for_profile(profile).order_by("period")
+        return Response(DueSerializer(dues, many=True).data)
+
+
 class SelfSubscribeView(TenantContextAPIView):
     """Autoatendimento: o próprio usuário ativa um plano do financeiro sem
     depender do administrador — Associado Full ou Assinatura Barbearia,

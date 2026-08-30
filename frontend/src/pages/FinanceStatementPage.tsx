@@ -5,6 +5,7 @@ import { Link, useParams } from "react-router-dom";
 import { brl } from "../features/barbershop/api";
 import {
   FINANCIAL_STATUS_BADGE,
+  periodLabel,
   useActivateBilling,
   useBillingProfiles,
   useCancelPayment,
@@ -16,14 +17,6 @@ import {
 import { formatDateBr } from "../lib/masks";
 import { useAuth } from "../auth/AuthContext";
 import { isAdmin } from "../auth/roles";
-
-function periodLabel(iso: string): string {
-  const [year, month] = iso.split("-");
-  return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("pt-BR", {
-    month: "long",
-    year: "numeric",
-  });
-}
 
 function RegisterPaymentModal({
   userId,

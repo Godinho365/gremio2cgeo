@@ -14,10 +14,12 @@ import { brl, useCredits } from "../features/barbershop/api";
 import {
   FINANCIAL_STATUS_BADGE,
   FINANCIAL_STATUS_LABEL,
+  periodLabel,
   PLAN_LABEL,
   selfServicePlansFor,
   useGenerateInvite,
   useInviteCandidates,
+  useMyDues,
   useMyFinance,
   useSelfSubscribe,
   type FinancialStatus,
@@ -354,6 +356,49 @@ function FinanceCard() {
   );
 }
 
+/** Extrato de mensalidades — todo mundo com plano (ativo ou já desativado)
+ * vê o próprio histórico completo, mês a mês, sem precisar de acesso ao
+ * Financeiro (isso continua só pra gestão). */
+function ExtratoCard() {
+  const { data: dues, isLoading } = useMyDues();
+  if (isLoading || !dues || dues.length === 0) return null;
+
+  const ordenado = [...dues].reverse();
+
+  return (
+    <div className="card mt-3">
+      <div className="card-header">
+        <h3 className="card-title">Extrato de mensalidades</h3>
+      </div>
+      <div className="table-responsive">
+        <table className="table table-vcenter card-table">
+          <thead>
+            <tr>
+              <th>Período</th>
+              <th>Vencimento</th>
+              <th>Valor</th>
+              <th>Situação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ordenado.map((due) => (
+              <tr key={due.id}>
+                <td className="text-capitalize">{periodLabel(due.period)}</td>
+                <td>{formatDateBr(due.due_date)}</td>
+                <td>R$ {brl(due.amount)}</td>
+                <td>
+                  {due.status_label}
+                  {due.paid_in_advance && <span className="badge bg-blue-lt ms-1">Antecipado</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /** Quem não tem plano ativo vê aqui como assinar (sem depender do
  * administrador ativar ou de convite) — ou o aviso de posto pendente de
  * reclassificação. */
@@ -565,6 +610,7 @@ export default function ProfilePage() {
 
       <CreditCard />
       <FinanceCard />
+      <ExtratoCard />
       <NoPlanCard />
       <InviteAssociadoCard />
 

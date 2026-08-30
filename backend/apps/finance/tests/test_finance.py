@@ -926,6 +926,40 @@ def test_finance_me_returns_own_summary_or_404(client: APIClient):
     assert client.get("/api/finance/me").status_code == 404
 
 
+def test_finance_my_dues_returns_own_statement(client: APIClient):
+    """Extrato de mensalidades no perfil: qualquer usuário vê o próprio,
+    sem depender de acesso ao Financeiro (staff-only)."""
+    tenant, admin = _org("finapi9c")
+    with use_tenant(tenant.id):
+        member = UserService().create_user(
+            username="membro_api9c", password="supersecret123",
+            posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+        outro = UserService().create_user(
+            username="membro_api9d", password="supersecret123",
+            posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(admin)
+    client.post(
+        "/api/billing-profiles",
+        {"user": str(member.id), "plan": "associado", "started_period": _period_str(0)},
+        format="json",
+    )
+
+    client.force_authenticate(member)
+    resp = client.get("/api/finance/me/mensalidades")
+    assert resp.status_code == 200, resp.data
+    assert len(resp.data) == 3  # mês corrente + WINDOW_MONTHS_AHEAD
+    assert resp.data[0]["period"] == _period_str(0)
+    assert "status_label" in resp.data[0]
+
+    # Quem nunca teve plano vê extrato vazio, não erro.
+    client.force_authenticate(outro)
+    resp = client.get("/api/finance/me/mensalidades")
+    assert resp.status_code == 200, resp.data
+    assert resp.data == []
+
+
 def test_activate_billing_reactivates_previously_deactivated_profile(tenant_a):
     with use_tenant(tenant_a.id):
         user = UserService().create_user(
