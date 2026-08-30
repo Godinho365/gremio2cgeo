@@ -52,7 +52,7 @@ function MonthlyBarChart({ rows }: { rows: MonthlyReportRow[] }) {
   const plotHeight = height - padding.top - padding.bottom;
   const max = Math.max(
     1,
-    ...rows.flatMap((r) => [Number(r.revenue_received), Number(r.dues_open_amount)]),
+    ...rows.flatMap((r) => [Number(r.dues_paid_amount), Number(r.dues_open_amount)]),
   );
   const groupWidth = width / Math.max(1, rows.length);
   const barWidth = Math.min(24, groupWidth / 3);
@@ -66,7 +66,7 @@ function MonthlyBarChart({ rows }: { rows: MonthlyReportRow[] }) {
     >
       {rows.map((r, i) => {
         const cx = groupWidth * i + groupWidth / 2;
-        const recebido = Number(r.revenue_received);
+        const recebido = Number(r.dues_paid_amount);
         const aberto = Number(r.dues_open_amount);
         const hRecebido = (recebido / max) * plotHeight;
         const hAberto = (aberto / max) * plotHeight;
@@ -80,7 +80,7 @@ function MonthlyBarChart({ rows }: { rows: MonthlyReportRow[] }) {
               fill="var(--tblr-green)"
               rx="2"
             >
-              <title>{`Arrecadado em ${mesLabel(r.period)}: R$ ${brl(r.revenue_received)}`}</title>
+              <title>{`Arrecadado referente a ${mesLabel(r.period)}: R$ ${brl(r.dues_paid_amount)}`}</title>
             </rect>
             <rect
               x={cx + 2}
@@ -111,16 +111,14 @@ function MonthlyBarChart({ rows }: { rows: MonthlyReportRow[] }) {
 function exportarRelatorioMensalCsv(rows: MonthlyReportRow[]) {
   const cabecalho = [
     "Mês",
-    "Arrecadado (R$)",
     "Mensalidades geradas",
-    "Pagas",
-    "Valor pago (R$)",
-    "Em aberto",
+    "Pagas (qtd)",
+    "Arrecadado (R$)",
+    "Em aberto (qtd)",
     "Valor em aberto (R$)",
   ];
   const linhas = rows.map((r) => [
     r.period,
-    r.revenue_received,
     String(r.dues_total_count),
     String(r.dues_paid_count),
     r.dues_paid_amount,
@@ -201,9 +199,9 @@ function MonthlyReportSection() {
             <thead>
               <tr>
                 <th>Mês</th>
-                <th className="text-end">Arrecadado</th>
                 <th className="text-end">Mensalidades</th>
                 <th className="text-end">Pagas</th>
+                <th className="text-end">Arrecadado</th>
                 <th className="text-end">Em aberto</th>
                 <th className="text-end">Valor em aberto</th>
               </tr>
@@ -212,9 +210,9 @@ function MonthlyReportSection() {
               {rows.map((r) => (
                 <tr key={r.period}>
                   <td>{mesLabel(r.period)}</td>
-                  <td className="text-end">R$ {brl(r.revenue_received)}</td>
                   <td className="text-end">{r.dues_total_count}</td>
                   <td className="text-end">{r.dues_paid_count}</td>
+                  <td className="text-end">R$ {brl(r.dues_paid_amount)}</td>
                   <td className="text-end">{r.dues_open_count}</td>
                   <td className="text-end">R$ {brl(r.dues_open_amount)}</td>
                 </tr>

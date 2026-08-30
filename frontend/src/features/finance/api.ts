@@ -301,7 +301,6 @@ export function useFinanceDashboard() {
 
 export interface MonthlyReportRow {
   period: string;
-  revenue_received: string;
   dues_total_amount: string;
   dues_total_count: number;
   dues_paid_amount: string;

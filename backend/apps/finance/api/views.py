@@ -195,7 +195,6 @@ class FinanceMonthlyReportView(TenantContextAPIView):
             [
                 {
                     "period": row["period"].isoformat(),
-                    "revenue_received": row["revenue_received"],
                     "dues_total_amount": row["dues_total_amount"],
                     "dues_total_count": row["dues_total_count"],
                     "dues_paid_amount": row["dues_paid_amount"],

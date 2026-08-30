@@ -735,13 +735,15 @@ class FinanceService(BaseService):
         }
 
     def monthly_report(self, *, months: int = 6) -> list[dict]:
-        """Últimos `months` meses (mais antigo primeiro): quanto entrou de
-        caixa (Due.paid_at no mês — cobre Pix e baixa manual, não só Pix
-        como `payments_received` do dashboard) e a situação das
-        mensalidades cujo período é aquele mês (geradas/pagas/em aberto).
+        """Últimos `months` meses (mais antigo primeiro): a situação das
+        mensalidades cujo período é aquele mês — geradas, pagas
+        ("arrecadado do mês") e em aberto.
 
-        Não filtra por perfil ativo: histórico não some quando alguém é
-        desativado depois — diferente do dashboard "de hoje" acima.
+        Por competência, não por caixa: uma mensalidade de junho paga em
+        agosto (atrasada) conta pra junho, não pra agosto — vencimento é
+        sempre o mesmo dia pra todo mundo, então cada mês só reflete o que
+        era dele. Não filtra por perfil ativo: histórico não some quando
+        alguém é desativado depois — diferente do dashboard "de hoje" acima.
         """
         months = max(1, min(months, 24))
         current = _first_of_month(timezone.localdate())
@@ -750,20 +752,12 @@ class FinanceService(BaseService):
         report = []
         for i in range(months):
             period = _add_months(start, i)
-            period_end = _add_months(period, 1)
             dues_period = self.dues.query().filter(period=period)
             paid = dues_period.filter(status=DueStatus.PAID)
             open_dues = dues_period.filter(status__in=OPEN_DUE_STATUSES)
-            received = (
-                self.dues.query()
-                .filter(paid_at__date__gte=period, paid_at__date__lt=period_end)
-                .aggregate(s=Sum("amount"))["s"]
-                or Decimal("0.00")
-            )
             report.append(
                 {
                     "period": period,
-                    "revenue_received": received,
                     "dues_total_amount": dues_period.aggregate(s=Sum("amount"))["s"]
                     or Decimal("0.00"),
                     "dues_total_count": dues_period.count(),

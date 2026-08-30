@@ -453,7 +453,7 @@ def test_monthly_report_clamps_months_between_1_and_24(tenant_a):
         assert len(FinanceService().monthly_report(months=999)) == 24
 
 
-def test_monthly_report_computes_dues_and_revenue_for_current_month(tenant_a):
+def test_monthly_report_computes_dues_for_current_month(tenant_a):
     with use_tenant(tenant_a.id):
         pago = UserService().create_user(
             username="mensal_pago", password="supersecret123",
@@ -482,7 +482,33 @@ def test_monthly_report_computes_dues_and_revenue_for_current_month(tenant_a):
     assert mes_atual["dues_paid_amount"] == Decimal("100.00")
     assert mes_atual["dues_open_count"] == 1
     assert mes_atual["dues_open_amount"] == Decimal("100.00")
-    assert mes_atual["revenue_received"] == Decimal("100.00")
+
+
+def test_monthly_report_attributes_late_payment_to_the_original_month():
+    """Mensalidade de um mês atrás, paga hoje (atrasada), conta pro mês a
+    que ela se refere — não pro mês em que o Pix caiu. Por competência, não
+    por caixa: era exatamente o contrário que gerava o bug reportado (tudo
+    concentrado no mês do pagamento)."""
+    tenant, admin = _org("finmensal_atraso")
+    with use_tenant(tenant.id):
+        atrasado = UserService().create_user(
+            username="mensal_atrasado", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant.id,
+        )
+        FinanceService().activate_billing(
+            user=atrasado, plan=PlanCode.ASSOCIADO,
+            due_day=timezone.localdate().day, started_period=_period(-1),
+        )
+        # Paga a mensalidade do mês passado hoje (atrasada) — não a do mês atual.
+        FinanceService().register_payment(
+            user=atrasado, amount=Decimal("100.00"), method="pix", paid_at=timezone.now(),
+        )
+        rows = {r["period"]: r for r in FinanceService().monthly_report(months=2)}
+    mes_passado = rows[_period(-1)]
+    mes_atual = rows[_period(0)]
+    assert mes_passado["dues_paid_amount"] == Decimal("100.00")
+    assert mes_passado["dues_paid_count"] == 1
+    assert mes_atual["dues_paid_amount"] == Decimal("0.00")
 
 
 def test_monthly_report_ignores_dues_outside_the_period_regardless_of_active_status(tenant_a):
@@ -810,7 +836,7 @@ def test_finance_monthly_report_requires_staff_read(client: APIClient):
     assert resp.status_code == 200, resp.data
     assert len(resp.data) == 3
     assert "period" in resp.data[0]
-    assert "revenue_received" in resp.data[0]
+    assert "dues_paid_amount" in resp.data[0]
 
 
 def test_finance_me_returns_own_summary_or_404(client: APIClient):
