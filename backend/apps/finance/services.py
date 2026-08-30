@@ -12,7 +12,7 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
-from apps.accounts.models import BARBERSHOP_ONLY_RANKS, User
+from apps.accounts.models import User
 from apps.payments.models import PaymentStatus
 from apps.payments.repositories import PaymentRepository
 from core import audit
@@ -26,7 +26,8 @@ from .models import (
     DueStatus,
     FinanceCreditReason,
     FinancialStatus,
-    membership_fee,
+    eligible_plans_for,
+    plan_price,
 )
 from .repositories import DueRepository, FinanceCreditRepository, FinanceRepository
 
@@ -64,10 +65,12 @@ class FinanceService(BaseService):
         self.payments = payments or PaymentRepository()
         self.credits = credits or FinanceCreditRepository()
 
-    def _refuse_if_ineligible(self, user: User) -> None:
-        if user.posto_graduacao in BARBERSHOP_ONLY_RANKS:
+    def _assert_eligible(self, user: User, plan: str) -> None:
+        if plan not in eligible_plans_for(user.posto_graduacao):
             raise BusinessRuleError(
-                "Praças (Sd/Cb) não entram na relação financeira.", code="ineligible_rank"
+                f"Posto {user.posto_graduacao or '(não informado)'} não é elegível "
+                "para este plano.",
+                code="ineligible_rank",
             )
 
     def _status_for(self, due_date: date, today: date) -> str:
@@ -88,7 +91,7 @@ class FinanceService(BaseService):
             billing_profile=profile,
             period=period,
             due_date=due_date,
-            amount=membership_fee(),
+            amount=plan_price(profile.plan),
             status=self._status_for(due_date, today),
         )
 
@@ -130,11 +133,12 @@ class FinanceService(BaseService):
         self,
         *,
         user: User,
+        plan: str,
         due_day: int,
         started_period: date,
         actor_id: str | None = None,
     ) -> BillingProfile:
-        self._refuse_if_ineligible(user)
+        self._assert_eligible(user, plan)
         if not (1 <= due_day <= 31):
             raise BusinessRuleError(
                 "Dia de vencimento deve ser entre 1 e 31.", code="invalid_due_day"
@@ -147,8 +151,9 @@ class FinanceService(BaseService):
                     "Usuário já está na relação financeira.", code="already_active"
                 )
             existing.is_active = True
+            existing.plan = plan
             existing.due_day = due_day
-            existing.save(update_fields=["is_active", "due_day", "updated_at"])
+            existing.save(update_fields=["is_active", "plan", "due_day", "updated_at"])
             self._ensure_window(existing)
             existing.financial_status = self._compute_financial_status(existing)
             existing.save(update_fields=["financial_status", "updated_at"])
@@ -157,7 +162,7 @@ class FinanceService(BaseService):
                 entity_type="BillingProfile",
                 entity_id=existing.id,
                 actor_id=actor_id,
-                diff={"due_day": due_day},
+                diff={"plan": plan, "due_day": due_day},
             )
             return existing
 
@@ -168,7 +173,7 @@ class FinanceService(BaseService):
                 code="started_period_too_old",
             )
         profile = self.profiles.create(
-            user_id=user.pk, due_day=due_day, started_period=started_period
+            user_id=user.pk, plan=plan, due_day=due_day, started_period=started_period
         )
         self._ensure_window(profile)
         profile.financial_status = self._compute_financial_status(profile)
@@ -178,7 +183,7 @@ class FinanceService(BaseService):
             entity_type="BillingProfile",
             entity_id=profile.id,
             actor_id=actor_id,
-            diff={"due_day": due_day, "started_period": str(profile.started_period)},
+            diff={"plan": plan, "due_day": due_day, "started_period": str(profile.started_period)},
         )
         return profile
 
@@ -213,7 +218,7 @@ class FinanceService(BaseService):
                 "Usuário não está na relação financeira.", code="not_in_billing"
             )
 
-        fee = membership_fee()
+        fee = plan_price(profile.plan)
         periods_covered = int(amount // fee)
         remainder = amount - (periods_covered * fee)
         if periods_covered > 60:
@@ -394,13 +399,10 @@ class FinanceService(BaseService):
         return consumed
 
     def roll_all(self) -> int:
-        """Reconciliação diária: janela, status por data, Sd/Cb, crédito acumulado."""
+        """Reconciliação diária: janela, status por data, crédito acumulado."""
         today = timezone.localdate()
         processed = 0
         for profile in self.profiles.active_profiles():
-            if profile.user.posto_graduacao in BARBERSHOP_ONLY_RANKS:
-                self.deactivate_billing(profile=profile)
-                continue
             self._ensure_window(profile, today=today)
             for due in self.dues.open_for_profile(profile):
                 new_status = self._status_for(due.due_date, today)

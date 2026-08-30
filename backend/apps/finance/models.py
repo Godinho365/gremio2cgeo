@@ -17,15 +17,6 @@ from apps.payments.models import Payment
 from core.models import TenantScopedModel
 
 
-def membership_fee() -> Decimal:
-    """Valor da mensalidade, de MEMBERSHIP_FEE no .env (padrão R$ 100,00).
-
-    Lido a cada uso: mudar o valor não exige mexer no código, e a mensalidade
-    já gerada fica congelada (snapshot em Due.amount).
-    """
-    return Decimal(str(settings.MEMBERSHIP_FEE))
-
-
 class PlanCode(models.TextChoices):
     ASSOCIADO = "associado", "Associado"
     BARBEARIA = "barbearia", "Mensalista Barbearia"
@@ -34,9 +25,9 @@ class PlanCode(models.TextChoices):
 def plan_price(code: str) -> Decimal:
     """Valor do plano, de ASSOCIADO_FEE/BARBEARIA_FEE no .env.
 
-    Mesmo padrão de membership_fee(): lido a cada uso, nunca importado —
-    mudar o valor não exige mexer no código, e a mensalidade já gerada
-    fica congelada (snapshot em Due.amount).
+    Lido a cada uso, nunca importado — mudar o valor não exige mexer no
+    código, e a mensalidade já gerada fica congelada (snapshot em
+    Due.amount).
     """
     if code == PlanCode.ASSOCIADO:
         return Decimal(str(settings.ASSOCIADO_FEE))

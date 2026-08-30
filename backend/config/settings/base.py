@@ -178,8 +178,6 @@ PIX_EXPIRY_MINUTES = env.int("PIX_EXPIRY_MINUTES", default=15)
 WALK_IN_PRICE = env("WALK_IN_PRICE", default="15.00")
 # Só para apontar a um ambiente de ensaio; vazio = API real do Mercado Pago.
 MERCADOPAGO_API_BASE = env("MERCADOPAGO_API_BASE", default="")
-# Valor único da mensalidade do grêmio (módulo Financeiro).
-MEMBERSHIP_FEE = env("MEMBERSHIP_FEE", default="100.00")
 # Planos do Financeiro (Fase 2) — cada um com seu valor mensal.
 ASSOCIADO_FEE = env("ASSOCIADO_FEE", default="30.00")
 BARBEARIA_FEE = env("BARBEARIA_FEE", default="20.00")
