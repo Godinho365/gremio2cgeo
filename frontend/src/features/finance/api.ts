@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../../lib/api";
+import type { Payment } from "../barbershop/api";
 
 export type FinancialStatus =
   | "up_to_date"
@@ -156,6 +157,30 @@ export function useSelfSubscribe() {
   return useMutation({
     mutationFn: async () => (await api.post<BillingProfile>("/finance/me/assinar")).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["finance"] }),
+  });
+}
+
+export function useInitiatePixPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (amount: string) =>
+      (await api.post<Payment>("/finance/me/pagar", { amount })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["finance"] }),
+  });
+}
+
+/** Reconsulta um Pix específico da mensalidade — a tela do QR usa isto pra
+ * confirmar sozinha, sem depender só do webhook. Consulta pelo id do
+ * pagamento (não "o que está pendente agora"): depois de aprovado, o
+ * perfil já não aponta mais pra ele, mas a tela ainda precisa ver o status
+ * final antes de fechar o ciclo. */
+export function useFinancePixStatus(paymentId: string | null, active: boolean) {
+  return useQuery({
+    queryKey: ["finance", "pix-status", paymentId],
+    enabled: active && !!paymentId,
+    refetchInterval: active ? 5_000 : false,
+    refetchIntervalInBackground: true,
+    queryFn: async () => (await api.get<Payment>(`/finance/me/pagamento/${paymentId}`)).data,
   });
 }
 

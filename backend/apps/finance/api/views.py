@@ -250,8 +250,8 @@ class FinancePixStatusView(TenantContextAPIView):
     permission_classes = [IsAuthenticated]
     service = FinanceService()
 
-    def get(self, request: Request) -> Response:
-        payment = self.service.refresh_pix_payment(request.user)
+    def get(self, request: Request, payment_id: str = "") -> Response:
+        payment = self.service.refresh_pix_payment(user=request.user, payment_id=payment_id)
         if payment is None:
             return Response(status=404)
         return Response(PaymentSerializer(payment).data)

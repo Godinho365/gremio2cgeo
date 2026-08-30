@@ -1,8 +1,9 @@
-import { IconLock, IconReceipt2, IconUser, IconWallet } from "@tabler/icons-react";
+import { IconCash, IconLock, IconReceipt2, IconUser, IconWallet } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { useAuth } from "../auth/AuthContext";
 import { ORG_NAME } from "../branding";
+import FinancePixModal from "../components/FinancePixModal";
 import {
   MILITARY_RANKS,
   ROLE_LABEL,
@@ -293,6 +294,7 @@ function CreditCard() {
 /** Situação da mensalidade — só aparece pra quem está na relação financeira. */
 function FinanceCard() {
   const { data, isLoading } = useMyFinance();
+  const [pagando, setPagando] = useState(false);
   if (isLoading || !data) return null;
 
   return (
@@ -327,6 +329,15 @@ function FinanceCard() {
           </div>
         </div>
       </div>
+      {data.months_open > 0 && (
+        <div className="card-footer text-end">
+          <button className="btn btn-primary" onClick={() => setPagando(true)}>
+            <IconCash size={18} className="me-1" />
+            Pagar
+          </button>
+        </div>
+      )}
+      {pagando && <FinancePixModal resumo={data} onClose={() => setPagando(false)} />}
     </div>
   );
 }

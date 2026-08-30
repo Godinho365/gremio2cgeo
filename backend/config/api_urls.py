@@ -67,7 +67,11 @@ urlpatterns = [
     path("finance/me", MyFinanceView.as_view(), name="finance_me"),
     path("finance/me/assinar", SelfSubscribeView.as_view(), name="finance_self_subscribe"),
     path("finance/me/pagar", InitiatePixPaymentView.as_view(), name="finance_initiate_pix"),
-    path("finance/me/pagamento", FinancePixStatusView.as_view(), name="finance_pix_status"),
+    path(
+        "finance/me/pagamento/<str:payment_id>",
+        FinancePixStatusView.as_view(),
+        name="finance_pix_status",
+    ),
     path(
         "finance/convites-associado",
         AssociadoInviteListCreateView.as_view(),

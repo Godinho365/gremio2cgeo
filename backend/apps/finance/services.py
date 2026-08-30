@@ -404,13 +404,18 @@ class FinanceService(BaseService):
         profile.save(update_fields=["pending_payment", "updated_at"])
         return payment
 
-    def refresh_pix_payment(self, user: User) -> Payment | None:
-        """Reconsulta o Pix da mensalidade no provedor — tela do QR usa isto
-        pra não depender só do webhook/tarefa de fundo."""
-        profile = self.profiles.profile_for_user(user.pk)
-        if profile is None or profile.pending_payment_id is None:
+    def refresh_pix_payment(self, *, user: User, payment_id: str) -> Payment | None:
+        """Reconsulta um Pix específico da mensalidade no provedor — a tela do
+        QR usa isto pra não depender só do webhook/tarefa de fundo.
+
+        Busca pelo id do próprio pagamento (não pelo `pending_payment` do
+        perfil): depois que `settle_finance_payment_for` aprova e aloca, o
+        perfil já não aponta mais pra ele, mas a tela ainda precisa ver o
+        status final (aprovado) pra fechar o ciclo."""
+        payment = self.payments.query().filter(pk=payment_id, payer_id=user.pk).first()
+        if payment is None:
             return None
-        payment = self.payment_gateway.sync(profile.pending_payment)
+        payment = self.payment_gateway.sync(payment)
         self.settle_finance_payment_for(payment)
         payment.refresh_from_db()
         return payment

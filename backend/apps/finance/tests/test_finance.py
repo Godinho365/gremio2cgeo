@@ -1116,9 +1116,9 @@ def test_approved_pix_payment_settles_the_open_dues(tenant_a):
         profile = FinanceService().activate_billing(
             user=user, plan=PlanCode.ASSOCIADO, due_day=10, started_period=_period(0)
         )
-        FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
+        aberto = FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
         FINANCE_PROVIDER_STATUS["value"] = "approved"
-        payment = FinanceService().refresh_pix_payment(user)
+        payment = FinanceService().refresh_pix_payment(user=user, payment_id=aberto.id)
         profile.refresh_from_db()
 
     assert payment.status == "approved"
@@ -1126,6 +1126,15 @@ def test_approved_pix_payment_settles_the_open_dues(tenant_a):
     paid = Due.objects.filter(billing_profile=profile, status=DueStatus.PAID)
     assert paid.count() == 1
     assert paid.first().settled_by_id == payment.id
+
+    # A tela do QR consulta de novo depois de aprovado (React Query não para
+    # de repente) — mesmo sem `pending_payment` mais no perfil, o status
+    # final tem que continuar visível por id (achado ao testar ao vivo: a
+    # 1ª versão dependia do pending_payment do perfil e "sumia" depois de
+    # liquidado, deixando a tela presa em "aguardando").
+    with use_tenant(tenant_a.id):
+        de_novo = FinanceService().refresh_pix_payment(user=user, payment_id=aberto.id)
+    assert de_novo.status == "approved"
 
 
 def test_expired_pix_payment_does_not_settle_and_clears_pending(tenant_a):
@@ -1140,7 +1149,7 @@ def test_expired_pix_payment_does_not_settle_and_clears_pending(tenant_a):
         payment = FinanceService().initiate_pix_payment(user=user, amount=Decimal("100.00"))
         payment.expires_at = timezone.now() - timedelta(minutes=1)
         payment.save(update_fields=["expires_at"])
-        atualizado = FinanceService().refresh_pix_payment(user)
+        atualizado = FinanceService().refresh_pix_payment(user=user, payment_id=payment.id)
         profile.refresh_from_db()
 
     assert atualizado.status == "expired"
@@ -1201,6 +1210,6 @@ def test_initiate_and_check_pix_payment_via_api(client: APIClient):
     assert resp.status_code == 201, resp.data
     assert resp.data["status"] == "pending"
 
-    status_resp = client.get("/api/finance/me/pagamento")
+    status_resp = client.get(f"/api/finance/me/pagamento/{resp.data['id']}")
     assert status_resp.status_code == 200, status_resp.data
     assert status_resp.data["status"] == "pending"
