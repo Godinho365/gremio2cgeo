@@ -6,11 +6,17 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from rest_framework.test import APIClient
 
+from django.utils import timezone
+
 from apps.accounts.models import RoleCode
 from apps.accounts.services import OnboardingService, UserService
 from apps.assets.services import AssetService
+from apps.finance.models import PlanCode
+from apps.finance.services import FinanceService
 from apps.scheduling.models import Booking, BookingStatus
+from apps.scheduling.services import BookingService
 from core.context import use_tenant
+from core.exceptions import BusinessRuleError
 
 pytestmark = pytest.mark.django_db
 
@@ -19,6 +25,21 @@ def _org(name: str):
     return OnboardingService().create_organization(
         org_name=name, admin_username=f"admin_{name}", admin_password="supersecret123"
     )
+
+
+def _make_associado(tenant, user):
+    """Dá ao usuário um BillingProfile Associado Full ativo e em dia — fora
+    da gestão, é isso que agora habilita reservar bens do patrimônio."""
+    with use_tenant(tenant.id):
+        if not user.posto_graduacao:
+            user.posto_graduacao = "Cel"
+            user.save(update_fields=["posto_graduacao"])
+        FinanceService().activate_billing(
+            user=user,
+            plan=PlanCode.ASSOCIADO,
+            due_day=timezone.localdate().day,
+            started_period=timezone.localdate().replace(day=1),
+        )
 
 
 def _dt(day: int, hour: int) -> str:
@@ -89,6 +110,7 @@ def test_approve_requires_manager(client: APIClient):
             username="plain4", password="supersecret123",
             role_codes=[RoleCode.USER], tenant_id=tenant.id,
         )
+    _make_associado(tenant, plain)
     client.force_authenticate(plain)
     created = client.post(
         "/api/bookings",
@@ -137,6 +159,7 @@ def test_cancel_is_restricted_to_owner_or_manager(client: APIClient):
             username="outro6", password="supersecret123",
             role_codes=[RoleCode.USER], tenant_id=tenant.id,
         )
+    _make_associado(tenant, dono)
 
     client.force_authenticate(dono)
     bid = client.post(
@@ -201,6 +224,7 @@ def test_manager_books_for_another_user(client: APIClient):
             username="benef8", password="supersecret123",
             role_codes=[RoleCode.USER], tenant_id=tenant.id,
         )
+    _make_associado(tenant, beneficiario)
     client.force_authenticate(admin)
     resp = client.post(
         "/api/bookings",
@@ -249,6 +273,7 @@ def test_delete_booking_is_manager_only(client: APIClient):
             username="comum10", password="supersecret123",
             role_codes=[RoleCode.USER], tenant_id=tenant.id,
         )
+    _make_associado(tenant, comum)
     client.force_authenticate(comum)
     bid = client.post(
         "/api/bookings",
@@ -305,3 +330,116 @@ def test_plain_user_can_still_read_availabilities(client: APIClient):
         )
     client.force_authenticate(plain)
     assert client.get("/api/availabilities").status_code == 200
+
+
+# ── Associado Full em dia é exigido pra reservar (fora da gestão) ───────────
+
+
+def test_user_without_any_plan_cannot_book(client: APIClient):
+    tenant, admin = _org("bk11")
+    asset = _asset(tenant)
+    with use_tenant(tenant.id):
+        sem_plano = UserService().create_user(
+            username="sem_plano11", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(sem_plano)
+    resp = client.post(
+        "/api/bookings",
+        {"asset": str(asset.id), "start_at": _dt(12, 10), "end_at": _dt(12, 12)},
+        format="json",
+    )
+    assert resp.status_code == 422, resp.data
+    assert resp.data["error"]["code"] == "associado_full_required"
+
+
+def test_barbearia_plan_does_not_unlock_reservations():
+    """Assinatura Barbearia é só pra Barbearia — não dá acesso ao patrimônio.
+
+    Testa o service direto, não a API: na prática o role de Cb/Sd EP/Sd EV já
+    é forçado pra "Cliente da Barbearia" (barra antes mesmo de chegar aqui),
+    mas a regra do plano precisa valer por si só — defesa em profundidade,
+    não depender só da camada de permissão da view.
+    """
+    tenant, admin = _org("bk12")
+    asset = _asset(tenant)
+    with use_tenant(tenant.id):
+        cb = UserService().create_user(
+            username="cb12", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant.id,
+        )
+        FinanceService().activate_billing(
+            user=cb, plan=PlanCode.BARBEARIA, due_day=timezone.localdate().day,
+            started_period=timezone.localdate().replace(day=1),
+        )
+        inicio = datetime.now(UTC) + timedelta(days=13)
+        with pytest.raises(BusinessRuleError):
+            BookingService().create_booking(
+                asset_id=asset.id,
+                requester_id=str(cb.id),
+                start_at=inicio.replace(hour=10, minute=0, second=0, microsecond=0),
+                end_at=inicio.replace(hour=12, minute=0, second=0, microsecond=0),
+            )
+
+
+def test_delinquent_associado_cannot_book(client: APIClient):
+    from apps.finance.models import BillingProfile, FinancialStatus
+
+    tenant, admin = _org("bk13")
+    asset = _asset(tenant)
+    with use_tenant(tenant.id):
+        atrasado = UserService().create_user(
+            username="atrasado13", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    _make_associado(tenant, atrasado)
+    with use_tenant(tenant.id):
+        perfil = BillingProfile.objects.get(user=atrasado)
+        perfil.financial_status = FinancialStatus.DELINQUENT
+        perfil.save(update_fields=["financial_status"])
+
+    client.force_authenticate(atrasado)
+    resp = client.post(
+        "/api/bookings",
+        {"asset": str(asset.id), "start_at": _dt(14, 10), "end_at": _dt(14, 12)},
+        format="json",
+    )
+    assert resp.status_code == 422, resp.data
+    assert resp.data["error"]["code"] == "associado_full_required"
+
+
+def test_management_roles_are_exempt_from_the_associado_full_requirement(client: APIClient):
+    """Diretor/Inventariante/Auditor reservam mesmo sem plano — só admin não
+    basta sozinho pra provar a isenção (o teste já cobre admin em outros lugares)."""
+    tenant, admin = _org("bk14")
+    asset = _asset(tenant)
+    with use_tenant(tenant.id):
+        diretor = UserService().create_user(
+            username="diretor14", password="supersecret123",
+            role_codes=[RoleCode.DIRECTOR], tenant_id=tenant.id,
+        )
+    client.force_authenticate(diretor)
+    resp = client.post(
+        "/api/bookings",
+        {"asset": str(asset.id), "start_at": _dt(15, 10), "end_at": _dt(15, 12)},
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+
+
+def test_associado_full_em_dia_can_book(client: APIClient):
+    tenant, admin = _org("bk15")
+    asset = _asset(tenant)
+    with use_tenant(tenant.id):
+        associado = UserService().create_user(
+            username="associado15", password="supersecret123",
+            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    _make_associado(tenant, associado)
+    client.force_authenticate(associado)
+    resp = client.post(
+        "/api/bookings",
+        {"asset": str(asset.id), "start_at": _dt(16, 10), "end_at": _dt(16, 12)},
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data

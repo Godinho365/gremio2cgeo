@@ -284,12 +284,19 @@ def test_cannot_delete_user_with_bookings(client: APIClient):
     from django.utils import timezone
 
     from apps.assets.services import AssetService
+    from apps.finance.models import PlanCode
+    from apps.finance.services import FinanceService
 
     tenant, admin = _make_org("comhistorico")
     with use_tenant(tenant.id):
         dono = UserService().create_user(
             username="comreserva", password="supersecret123",
-            role_codes=[RoleCode.USER], tenant_id=tenant.id,
+            posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+        # Reservar bem do patrimônio exige Associado Full ativo e em dia.
+        FinanceService().activate_billing(
+            user=dono, plan=PlanCode.ASSOCIADO, due_day=timezone.localdate().day,
+            started_period=timezone.localdate().replace(day=1),
         )
         asset = AssetService().create_asset(name="Bem reservado")
     client.force_authenticate(dono)

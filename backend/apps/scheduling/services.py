@@ -7,7 +7,10 @@ from uuid import UUID
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.models import RoleCode, User
 from apps.assets.models import Asset, AssetStatus
+from apps.finance.models import FinancialStatus, PlanCode
+from apps.finance.repositories import FinanceRepository
 from core import audit
 from core.exceptions import BusinessRuleError, ConflictError
 from core.services import BaseService
@@ -17,10 +20,38 @@ from .repositories import BookingRepository
 
 _UNBOOKABLE_STATUSES = (AssetStatus.MAINTENANCE, AssetStatus.WRITTEN_OFF)
 
+# Fora da gestão, só reserva quem tem Associado Full ativo e em dia — a
+# Assinatura Barbearia não dá acesso ao patrimônio, e vencido/inadimplente
+# perde o direito até regularizar (mesma régua da Barbearia).
+_STAFF_ROLES = (RoleCode.ADMIN, RoleCode.DIRECTOR, RoleCode.INVENTORY, RoleCode.AUDITOR)
+_RESERVATION_BLOCKING_STATUSES = (FinancialStatus.OVERDUE, FinancialStatus.DELINQUENT)
+
 
 class BookingService(BaseService):
-    def __init__(self, repository: BookingRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: BookingRepository | None = None,
+        finance_profiles: FinanceRepository | None = None,
+    ) -> None:
         self.repository = repository or BookingRepository()
+        self.finance_profiles = finance_profiles or FinanceRepository()
+
+    def _assert_can_reserve(self, requester_id: UUID | str) -> None:
+        requester = User.objects.get(pk=requester_id)
+        if requester.is_superuser or requester.roles.filter(code__in=_STAFF_ROLES).exists():
+            return
+        profile = self.finance_profiles.profile_for_user(requester_id)
+        elegivel = (
+            profile is not None
+            and profile.is_active
+            and profile.plan == PlanCode.ASSOCIADO
+            and profile.financial_status not in _RESERVATION_BLOCKING_STATUSES
+        )
+        if not elegivel:
+            raise BusinessRuleError(
+                "Só quem tem Associado Full ativo e em dia pode reservar bens do patrimônio.",
+                code="associado_full_required",
+            )
 
     def _assert_no_overlap(
         self,
@@ -46,6 +77,7 @@ class BookingService(BaseService):
         end_at: datetime,
         notes: str = "",
     ) -> Booking:
+        self._assert_can_reserve(requester_id)
         if start_at >= end_at:
             raise BusinessRuleError("Início deve ser anterior ao término.", code="invalid_interval")
 
