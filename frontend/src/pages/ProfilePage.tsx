@@ -11,9 +11,12 @@ import {
 } from "../features/accounts/api";
 import { brl, useCredits } from "../features/barbershop/api";
 import {
+  eligiblePlansFor,
   FINANCIAL_STATUS_BADGE,
   FINANCIAL_STATUS_LABEL,
+  PLAN_LABEL,
   useMyFinance,
+  useSelfSubscribe,
 } from "../features/finance/api";
 import { formatDateBr, maskCpf, maskPhone } from "../lib/masks";
 
@@ -297,6 +300,7 @@ function FinanceCard() {
       <div className="card-header d-flex align-items-center gap-2">
         <IconReceipt2 size={20} />
         <h3 className="card-title m-0">Minha mensalidade</h3>
+        <span className="text-secondary small">{data.plan_label}</span>
         <span className={`badge ms-auto ${FINANCIAL_STATUS_BADGE[data.financial_status]}`}>
           {FINANCIAL_STATUS_LABEL[data.financial_status]}
         </span>
@@ -322,6 +326,65 @@ function FinanceCard() {
             <div className="datagrid-content">R$ {brl(data.pending_amount)}</div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Quem não tem plano ativo vê aqui como assinar (ou o aviso de posto
+ * pendente de reclassificação). */
+function NoPlanCard() {
+  const { user } = useAuth();
+  const { data, isLoading } = useMyFinance();
+  const subscribe = useSelfSubscribe();
+  const [error, setError] = useState<string | null>(null);
+
+  if (isLoading || data) return null;
+  const posto = user?.posto_graduacao ?? "";
+
+  if (posto === "Sd") {
+    return (
+      <div className="card mt-3">
+        <div className="card-body">
+          <div className="alert alert-warning mb-0">
+            Seu posto está desatualizado (Soldado, sem EP/EV). Peça pro
+            administrador corrigir seu cadastro antes de assinar um plano.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const podeBarbearia = eligiblePlansFor(posto).includes("barbearia");
+
+  async function assinar() {
+    setError(null);
+    try {
+      await subscribe.mutateAsync();
+    } catch (err) {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } }).response
+        ?.data?.error?.message;
+      setError(msg ?? "Não foi possível ativar a assinatura.");
+    }
+  }
+
+  return (
+    <div className="card mt-3">
+      <div className="card-header">
+        <h3 className="card-title m-0">Meu plano</h3>
+      </div>
+      <div className="card-body">
+        {error && <div className="alert alert-danger">{error}</div>}
+        <p className="text-secondary">Sem plano ativo.</p>
+        {podeBarbearia ? (
+          <button className="btn btn-primary" onClick={assinar} disabled={subscribe.isPending}>
+            {subscribe.isPending ? "Ativando…" : `Assinar ${PLAN_LABEL.barbearia}`}
+          </button>
+        ) : (
+          <a href="/barbearia" className="btn btn-outline-primary">
+            Marcar corte avulso
+          </a>
+        )}
       </div>
     </div>
   );
@@ -377,6 +440,7 @@ export default function ProfilePage() {
 
       <CreditCard />
       <FinanceCard />
+      <NoPlanCard />
 
       <div className="mt-3">
         <ProfileForm />
