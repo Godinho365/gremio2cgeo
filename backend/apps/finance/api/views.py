@@ -175,6 +175,39 @@ class FinanceDashboardView(TenantContextAPIView):
         return Response(self.service.dashboard(date_from=date_from, date_to=date_to))
 
 
+class FinanceMonthlyReportView(TenantContextAPIView):
+    """Comparativo mensal (arrecadação + mensalidades por período), para o
+    gráfico/tabela/exportação do painel do admin."""
+
+    permission_classes = [IsAuthenticated]
+    service = FinanceService()
+
+    def get(self, request: Request) -> Response:
+        if not _can_read(request.user):
+            raise BusinessRuleError("Sem permissão para ver o financeiro.", code="forbidden")
+        raw_months = request.query_params.get("months")
+        try:
+            months = int(raw_months) if raw_months else 6
+        except ValueError:
+            months = 6
+        rows = self.service.monthly_report(months=months)
+        return Response(
+            [
+                {
+                    "period": row["period"].isoformat(),
+                    "revenue_received": row["revenue_received"],
+                    "dues_total_amount": row["dues_total_amount"],
+                    "dues_total_count": row["dues_total_count"],
+                    "dues_paid_amount": row["dues_paid_amount"],
+                    "dues_paid_count": row["dues_paid_count"],
+                    "dues_open_amount": row["dues_open_amount"],
+                    "dues_open_count": row["dues_open_count"],
+                }
+                for row in rows
+            ]
+        )
+
+
 class AssociadoInviteListCreateView(TenantContextAPIView):
     permission_classes = [IsAuthenticated]
     service = FinanceService()

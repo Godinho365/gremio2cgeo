@@ -299,6 +299,25 @@ export function useFinanceDashboard() {
   });
 }
 
+export interface MonthlyReportRow {
+  period: string;
+  revenue_received: string;
+  dues_total_amount: string;
+  dues_total_count: number;
+  dues_paid_amount: string;
+  dues_paid_count: number;
+  dues_open_amount: string;
+  dues_open_count: number;
+}
+
+export function useFinanceMonthlyReport(months: number) {
+  return useQuery({
+    queryKey: ["finance", "monthly-report", months],
+    queryFn: async () =>
+      (await api.get<MonthlyReportRow[]>(`/finance/dashboard/mensal?months=${months}`)).data,
+  });
+}
+
 export interface MyFinanceSummary {
   financial_status: FinancialStatus;
   plan: PlanCode;

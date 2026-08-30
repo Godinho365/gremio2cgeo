@@ -440,6 +440,70 @@ def test_dashboard_counts_active_profiles_by_financial_status(tenant_a):
     assert data["overdue_count"] + data["delinquent_count"] >= 1
 
 
+def test_monthly_report_shape_and_ordering(tenant_a):
+    with use_tenant(tenant_a.id):
+        rows = FinanceService().monthly_report(months=3)
+    assert len(rows) == 3
+    assert [r["period"] for r in rows] == [_period(-2), _period(-1), _period(0)]
+
+
+def test_monthly_report_clamps_months_between_1_and_24(tenant_a):
+    with use_tenant(tenant_a.id):
+        assert len(FinanceService().monthly_report(months=0)) == 1
+        assert len(FinanceService().monthly_report(months=999)) == 24
+
+
+def test_monthly_report_computes_dues_and_revenue_for_current_month(tenant_a):
+    with use_tenant(tenant_a.id):
+        pago = UserService().create_user(
+            username="mensal_pago", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        aberto = UserService().create_user(
+            username="mensal_aberto", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(
+            user=pago, plan=PlanCode.ASSOCIADO,
+            due_day=timezone.localdate().day, started_period=_period(0),
+        )
+        FinanceService().activate_billing(
+            user=aberto, plan=PlanCode.ASSOCIADO,
+            due_day=timezone.localdate().day, started_period=_period(0),
+        )
+        FinanceService().register_payment(
+            user=pago, amount=Decimal("100.00"), method="pix", paid_at=timezone.now(),
+        )
+        rows = FinanceService().monthly_report(months=1)
+    mes_atual = rows[0]
+    assert mes_atual["period"] == _period(0)
+    assert mes_atual["dues_total_count"] == 2
+    assert mes_atual["dues_paid_count"] == 1
+    assert mes_atual["dues_paid_amount"] == Decimal("100.00")
+    assert mes_atual["dues_open_count"] == 1
+    assert mes_atual["dues_open_amount"] == Decimal("100.00")
+    assert mes_atual["revenue_received"] == Decimal("100.00")
+
+
+def test_monthly_report_ignores_dues_outside_the_period_regardless_of_active_status(tenant_a):
+    """Histórico não some quando o perfil é desativado depois — diferente do
+    dashboard "de hoje", que só olha perfis ativos."""
+    with use_tenant(tenant_a.id):
+        membro = UserService().create_user(
+            username="mensal_historico", password="supersecret123",
+            posto_graduacao="Cel", tenant_id=tenant_a.id,
+        )
+        FinanceService().activate_billing(
+            user=membro, plan=PlanCode.ASSOCIADO,
+            due_day=timezone.localdate().day, started_period=_period(0),
+        )
+        from apps.finance.models import BillingProfile
+
+        BillingProfile.objects.filter(user=membro).update(is_active=False)
+        rows = FinanceService().monthly_report(months=1)
+    assert rows[0]["dues_total_count"] == 1
+
+
 def test_activate_billing_via_api_requires_admin(client: APIClient):
     tenant, admin = _org("finapi1")
     with use_tenant(tenant.id):
@@ -729,6 +793,24 @@ def test_finance_dashboard_requires_staff_read(client: APIClient):
     resp = client.get("/api/finance/dashboard")
     assert resp.status_code == 200, resp.data
     assert "total_users" in resp.data
+
+
+def test_finance_monthly_report_requires_staff_read(client: APIClient):
+    tenant, admin = _org("finapi8b")
+    with use_tenant(tenant.id):
+        plain = UserService().create_user(
+            username="plain_fin8b", password="supersecret123",
+            posto_graduacao="Cel", role_codes=[RoleCode.USER], tenant_id=tenant.id,
+        )
+    client.force_authenticate(plain)
+    assert client.get("/api/finance/dashboard/mensal").status_code == 422
+
+    client.force_authenticate(admin)
+    resp = client.get("/api/finance/dashboard/mensal?months=3")
+    assert resp.status_code == 200, resp.data
+    assert len(resp.data) == 3
+    assert "period" in resp.data[0]
+    assert "revenue_received" in resp.data[0]
 
 
 def test_finance_me_returns_own_summary_or_404(client: APIClient):

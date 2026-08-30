@@ -733,3 +733,45 @@ class FinanceService(BaseService):
             "advance_payments_received": advance_credit,
             "upcoming_receivable": upcoming.aggregate(s=Sum("amount"))["s"] or Decimal("0.00"),
         }
+
+    def monthly_report(self, *, months: int = 6) -> list[dict]:
+        """Últimos `months` meses (mais antigo primeiro): quanto entrou de
+        caixa (Due.paid_at no mês — cobre Pix e baixa manual, não só Pix
+        como `payments_received` do dashboard) e a situação das
+        mensalidades cujo período é aquele mês (geradas/pagas/em aberto).
+
+        Não filtra por perfil ativo: histórico não some quando alguém é
+        desativado depois — diferente do dashboard "de hoje" acima.
+        """
+        months = max(1, min(months, 24))
+        current = _first_of_month(timezone.localdate())
+        start = _add_months(current, -(months - 1))
+
+        report = []
+        for i in range(months):
+            period = _add_months(start, i)
+            period_end = _add_months(period, 1)
+            dues_period = self.dues.query().filter(period=period)
+            paid = dues_period.filter(status=DueStatus.PAID)
+            open_dues = dues_period.filter(status__in=OPEN_DUE_STATUSES)
+            received = (
+                self.dues.query()
+                .filter(paid_at__date__gte=period, paid_at__date__lt=period_end)
+                .aggregate(s=Sum("amount"))["s"]
+                or Decimal("0.00")
+            )
+            report.append(
+                {
+                    "period": period,
+                    "revenue_received": received,
+                    "dues_total_amount": dues_period.aggregate(s=Sum("amount"))["s"]
+                    or Decimal("0.00"),
+                    "dues_total_count": dues_period.count(),
+                    "dues_paid_amount": paid.aggregate(s=Sum("amount"))["s"] or Decimal("0.00"),
+                    "dues_paid_count": paid.count(),
+                    "dues_open_amount": open_dues.aggregate(s=Sum("amount"))["s"]
+                    or Decimal("0.00"),
+                    "dues_open_count": open_dues.count(),
+                }
+            )
+        return report

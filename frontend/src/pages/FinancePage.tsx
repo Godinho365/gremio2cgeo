@@ -1,4 +1,4 @@
-import { IconBuildingBank, IconPlus } from "@tabler/icons-react";
+import { IconBuildingBank, IconDownload, IconPlus } from "@tabler/icons-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -11,8 +11,10 @@ import {
   useActivateBilling,
   useBillingProfiles,
   useFinanceDashboard,
+  useFinanceMonthlyReport,
   useGenerateInvite,
   usePendingInvites,
+  type MonthlyReportRow,
   type PlanCode,
 } from "../features/finance/api";
 import { useUsers } from "../features/accounts/api";
@@ -28,6 +30,199 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
           <div className="h2 mb-0">{value}</div>
         </div>
       </div>
+    </div>
+  );
+}
+
+const MONTH_RANGE_OPTIONS = [3, 6, 12] as const;
+
+function mesLabel(periodIso: string): string {
+  const [ano, mes] = periodIso.split("-").map(Number);
+  return new Date(ano, mes - 1, 1)
+    .toLocaleDateString("pt-BR", { month: "short", year: "2-digit" })
+    .replace(".", "");
+}
+
+/** Barras agrupadas (arrecadado x em aberto) por mês — sem lib de gráfico,
+ * só SVG: é a única coisa que precisa desse tipo de visual no projeto. */
+function MonthlyBarChart({ rows }: { rows: MonthlyReportRow[] }) {
+  const width = 720;
+  const height = 220;
+  const padding = { top: 12, bottom: 34 };
+  const plotHeight = height - padding.top - padding.bottom;
+  const max = Math.max(
+    1,
+    ...rows.flatMap((r) => [Number(r.revenue_received), Number(r.dues_open_amount)]),
+  );
+  const groupWidth = width / Math.max(1, rows.length);
+  const barWidth = Math.min(24, groupWidth / 3);
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      className="w-100"
+      role="img"
+      aria-label="Comparativo mensal: arrecadado versus em aberto"
+    >
+      {rows.map((r, i) => {
+        const cx = groupWidth * i + groupWidth / 2;
+        const recebido = Number(r.revenue_received);
+        const aberto = Number(r.dues_open_amount);
+        const hRecebido = (recebido / max) * plotHeight;
+        const hAberto = (aberto / max) * plotHeight;
+        return (
+          <g key={r.period}>
+            <rect
+              x={cx - barWidth - 2}
+              y={padding.top + plotHeight - hRecebido}
+              width={barWidth}
+              height={hRecebido}
+              fill="var(--tblr-green)"
+              rx="2"
+            >
+              <title>{`Arrecadado em ${mesLabel(r.period)}: R$ ${brl(r.revenue_received)}`}</title>
+            </rect>
+            <rect
+              x={cx + 2}
+              y={padding.top + plotHeight - hAberto}
+              width={barWidth}
+              height={hAberto}
+              fill="var(--tblr-red)"
+              rx="2"
+            >
+              <title>{`Em aberto em ${mesLabel(r.period)}: R$ ${brl(r.dues_open_amount)}`}</title>
+            </rect>
+            <text
+              x={cx}
+              y={height - 12}
+              textAnchor="middle"
+              fontSize="11"
+              fill="var(--tblr-body-color)"
+            >
+              {mesLabel(r.period)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function exportarRelatorioMensalCsv(rows: MonthlyReportRow[]) {
+  const cabecalho = [
+    "Mês",
+    "Arrecadado (R$)",
+    "Mensalidades geradas",
+    "Pagas",
+    "Valor pago (R$)",
+    "Em aberto",
+    "Valor em aberto (R$)",
+  ];
+  const linhas = rows.map((r) => [
+    r.period,
+    r.revenue_received,
+    String(r.dues_total_count),
+    String(r.dues_paid_count),
+    r.dues_paid_amount,
+    String(r.dues_open_count),
+    r.dues_open_amount,
+  ]);
+  const csv = [cabecalho, ...linhas].map((cols) => cols.join(";")).join("\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `financeiro-mensal-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Comparativo por mês: arrecadação de caixa e situação das mensalidades de
+ * cada período — gráfico, tabela e exportação CSV. */
+function MonthlyReportSection() {
+  const [months, setMonths] = useState<(typeof MONTH_RANGE_OPTIONS)[number]>(6);
+  const { data: rows, isLoading } = useFinanceMonthlyReport(months);
+
+  return (
+    <div className="card mt-3">
+      <div className="card-header">
+        <h3 className="card-title">Comparativo mensal</h3>
+        <div className="card-actions d-flex align-items-center gap-2">
+          <div className="btn-group">
+            {MONTH_RANGE_OPTIONS.map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`btn btn-sm ${months === n ? "btn-primary" : "btn-outline-secondary"}`}
+                onClick={() => setMonths(n)}
+              >
+                {n} meses
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary"
+            disabled={!rows || rows.length === 0}
+            onClick={() => rows && exportarRelatorioMensalCsv(rows)}
+          >
+            <IconDownload size={16} className="me-1" />
+            Exportar CSV
+          </button>
+        </div>
+      </div>
+      <div className="card-body">
+        {isLoading && <div className="text-secondary">Carregando…</div>}
+        {rows && rows.length > 0 && (
+          <>
+            <MonthlyBarChart rows={rows} />
+            <div className="d-flex gap-3 mt-1 mb-3 small text-secondary">
+              <span>
+                <span
+                  className="d-inline-block rounded-1 me-1"
+                  style={{ width: 10, height: 10, background: "var(--tblr-green)" }}
+                />
+                Arrecadado
+              </span>
+              <span>
+                <span
+                  className="d-inline-block rounded-1 me-1"
+                  style={{ width: 10, height: 10, background: "var(--tblr-red)" }}
+                />
+                Em aberto
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+      {rows && rows.length > 0 && (
+        <div className="table-responsive">
+          <table className="table table-vcenter card-table">
+            <thead>
+              <tr>
+                <th>Mês</th>
+                <th className="text-end">Arrecadado</th>
+                <th className="text-end">Mensalidades</th>
+                <th className="text-end">Pagas</th>
+                <th className="text-end">Em aberto</th>
+                <th className="text-end">Valor em aberto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.period}>
+                  <td>{mesLabel(r.period)}</td>
+                  <td className="text-end">R$ {brl(r.revenue_received)}</td>
+                  <td className="text-end">{r.dues_total_count}</td>
+                  <td className="text-end">{r.dues_paid_count}</td>
+                  <td className="text-end">{r.dues_open_count}</td>
+                  <td className="text-end">R$ {brl(r.dues_open_amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -210,6 +405,8 @@ export default function FinancePage() {
           <StatCard label="Previsão a receber" value={`R$ ${brl(dashboard.upcoming_receivable)}`} />
         </div>
       )}
+
+      <MonthlyReportSection />
 
       <div className="card mt-3">
         <div className="table-responsive">
