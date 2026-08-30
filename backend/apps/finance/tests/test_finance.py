@@ -939,3 +939,88 @@ def test_activate_billing_via_api_rejects_ineligible_plan(client: APIClient):
         format="json",
     )
     assert resp.status_code == 422, resp.data
+
+
+def test_generate_associado_invite_requires_admin(client: APIClient):
+    tenant, admin = _org("finapi12")
+    with use_tenant(tenant.id):
+        cabo = UserService().create_user(
+            username="cabo_convite", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant.id,
+        )
+        director = UserService().create_user(
+            username="director_convite", password="supersecret123",
+            role_codes=[RoleCode.DIRECTOR], posto_graduacao="Cel", tenant_id=tenant.id,
+        )
+    client.force_authenticate(director)
+    resp = client.post("/api/finance/convites-associado", {"user": str(cabo.id)}, format="json")
+    assert resp.status_code == 422, resp.data
+
+    client.force_authenticate(admin)
+    resp = client.post("/api/finance/convites-associado", {"user": str(cabo.id)}, format="json")
+    assert resp.status_code == 201, resp.data
+    assert resp.data["used_at"] is None
+
+
+def test_generate_associado_invite_rejects_ineligible_rank(tenant_a):
+    with use_tenant(tenant_a.id):
+        soldado_ev = UserService().create_user(
+            username="sdev_convite", password="supersecret123",
+            posto_graduacao="Sd EV", tenant_id=tenant_a.id,
+        )
+        with pytest.raises(BusinessRuleError):
+            FinanceService().generate_associado_invite(user=soldado_ev)
+
+
+def test_accept_associado_invite_activates_the_associado_plan(tenant_a):
+    with use_tenant(tenant_a.id):
+        cabo = UserService().create_user(
+            username="cabo_aceita", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant_a.id,
+        )
+        invite = FinanceService().generate_associado_invite(user=cabo)
+        profile = FinanceService().accept_associado_invite(token=invite.token, actor=cabo)
+        invite.refresh_from_db()
+    assert profile.plan == PlanCode.ASSOCIADO
+    assert profile.is_active is True
+    assert invite.used_at is not None
+
+
+def test_accept_associado_invite_rejects_someone_elses_token(tenant_a):
+    with use_tenant(tenant_a.id):
+        cabo = UserService().create_user(
+            username="cabo_dono", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant_a.id,
+        )
+        outro = UserService().create_user(
+            username="outro_usuario", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant_a.id,
+        )
+        invite = FinanceService().generate_associado_invite(user=cabo)
+        with pytest.raises(BusinessRuleError):
+            FinanceService().accept_associado_invite(token=invite.token, actor=outro)
+
+
+def test_accept_associado_invite_rejects_used_token(tenant_a):
+    with use_tenant(tenant_a.id):
+        cabo = UserService().create_user(
+            username="cabo_reuso", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant_a.id,
+        )
+        invite = FinanceService().generate_associado_invite(user=cabo)
+        FinanceService().accept_associado_invite(token=invite.token, actor=cabo)
+        with pytest.raises(BusinessRuleError):
+            FinanceService().accept_associado_invite(token=invite.token, actor=cabo)
+
+
+def test_accept_associado_invite_rejects_expired_token(tenant_a):
+    with use_tenant(tenant_a.id):
+        cabo = UserService().create_user(
+            username="cabo_expirado", password="supersecret123",
+            posto_graduacao="Cb", tenant_id=tenant_a.id,
+        )
+        invite = FinanceService().generate_associado_invite(user=cabo)
+        invite.expires_at = timezone.now() - timedelta(days=1)
+        invite.save(update_fields=["expires_at"])
+        with pytest.raises(BusinessRuleError):
+            FinanceService().accept_associado_invite(token=invite.token, actor=cabo)

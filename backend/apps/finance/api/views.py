@@ -18,8 +18,10 @@ from ..models import BillingProfile, Due
 from ..services import FinanceService
 from .serializers import (
     ActivateBillingSerializer,
+    AssociadoInviteSerializer,
     BillingProfileSerializer,
     DueSerializer,
+    GenerateInviteSerializer,
     RegisterPaymentSerializer,
     UpdateDueDaySerializer,
 )
@@ -152,6 +154,36 @@ class FinanceDashboardView(TenantContextAPIView):
         date_from = datetime.strptime(raw_from, "%Y-%m-%d").date() if raw_from else None
         date_to = datetime.strptime(raw_to, "%Y-%m-%d").date() if raw_to else None
         return Response(self.service.dashboard(date_from=date_from, date_to=date_to))
+
+
+class AssociadoInviteListCreateView(TenantContextAPIView):
+    permission_classes = [IsAuthenticated]
+    service = FinanceService()
+
+    def get(self, request: Request) -> Response:
+        if not _can_read(request.user):
+            raise BusinessRuleError("Sem permissão para ver o financeiro.", code="forbidden")
+        invites = self.service.list_pending_associado_invites()
+        return Response(AssociadoInviteSerializer(invites, many=True).data)
+
+    def post(self, request: Request) -> Response:
+        if not _can_manage(request.user):
+            raise BusinessRuleError("Apenas Administrador gera convites.", code="forbidden")
+        payload = GenerateInviteSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        invite = self.service.generate_associado_invite(
+            user=payload.validated_data["user"], actor_id=str(request.user.pk)
+        )
+        return Response(AssociadoInviteSerializer(invite).data, status=201)
+
+
+class AssociadoInviteAcceptView(TenantContextAPIView):
+    permission_classes = [IsAuthenticated]
+    service = FinanceService()
+
+    def post(self, request: Request, token: str = "") -> Response:
+        profile = self.service.accept_associado_invite(token=token, actor=request.user)
+        return Response(BillingProfileSerializer(profile).data)
 
 
 class MyFinanceView(TenantContextAPIView):

@@ -8,10 +8,13 @@ soma das linhas, nunca um campo solto).
 """
 from __future__ import annotations
 
+import secrets
+from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from apps.payments.models import Payment
 from core.models import TenantScopedModel
@@ -160,3 +163,37 @@ class FinanceCredit(TenantScopedModel):
     def __str__(self) -> str:
         sinal = "+" if self.amount >= 0 else ""
         return f"{sinal}{self.amount} {self.get_reason_display()}"
+
+
+def _gen_invite_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def _default_invite_expiry():
+    return timezone.now() + timedelta(days=settings.ASSOCIADO_INVITE_DAYS)
+
+
+class AssociadoInvite(TenantScopedModel):
+    """Convite de autoatendimento pro plano Associado (Cb/Sd EP).
+
+    Gerado pelo admin, consumido pelo próprio usuário — ver
+    FinanceService.generate_associado_invite/accept_associado_invite.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="associado_invites"
+    )
+    token = models.CharField(max_length=64, unique=True, default=_gen_invite_token)
+    expires_at = models.DateTimeField(default=_default_invite_expiry)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "associado_invite"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Convite Associado — {self.user}"
+
+    @property
+    def is_valid(self) -> bool:
+        return self.used_at is None and timezone.now() <= self.expires_at

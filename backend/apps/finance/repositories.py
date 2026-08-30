@@ -7,7 +7,7 @@ from django.db import models
 
 from core.repositories import BaseRepository
 
-from .models import OPEN_DUE_STATUSES, BillingProfile, Due, FinanceCredit
+from .models import OPEN_DUE_STATUSES, AssociadoInvite, BillingProfile, Due, FinanceCredit
 
 
 class FinanceRepository(BaseRepository[BillingProfile]):
@@ -48,3 +48,13 @@ class FinanceCreditRepository(BaseRepository[FinanceCredit]):
     def balance(self, billing_profile: BillingProfile) -> Decimal:
         total = self.for_profile(billing_profile).aggregate(s=models.Sum("amount"))["s"]
         return total or Decimal("0.00")
+
+
+class AssociadoInviteRepository(BaseRepository[AssociadoInvite]):
+    model = AssociadoInvite
+
+    def get_by_token(self, token: str) -> AssociadoInvite | None:
+        return self.query().filter(token=token).first()
+
+    def pending(self) -> models.QuerySet[AssociadoInvite]:
+        return self.query().filter(used_at__isnull=True).select_related("user")

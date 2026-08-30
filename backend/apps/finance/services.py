@@ -21,15 +21,22 @@ from core.services import BaseService
 
 from .models import (
     OPEN_DUE_STATUSES,
+    AssociadoInvite,
     BillingProfile,
     Due,
     DueStatus,
     FinanceCreditReason,
     FinancialStatus,
+    PlanCode,
     eligible_plans_for,
     plan_price,
 )
-from .repositories import DueRepository, FinanceCreditRepository, FinanceRepository
+from .repositories import (
+    AssociadoInviteRepository,
+    DueRepository,
+    FinanceCreditRepository,
+    FinanceRepository,
+)
 
 
 def _first_of_month(d: date) -> date:
@@ -59,10 +66,12 @@ class FinanceService(BaseService):
         dues: DueRepository | None = None,
         payments: PaymentRepository | None = None,
         credits: FinanceCreditRepository | None = None,
+        invites: AssociadoInviteRepository | None = None,
     ) -> None:
         self.profiles = profiles or FinanceRepository()
         self.dues = dues or DueRepository()
         self.payments = payments or PaymentRepository()
+        self.invites = invites or AssociadoInviteRepository()
         self.credits = credits or FinanceCreditRepository()
 
     def _assert_eligible(self, user: User, plan: str) -> None:
@@ -184,6 +193,60 @@ class FinanceService(BaseService):
             entity_id=profile.id,
             actor_id=actor_id,
             diff={"plan": plan, "due_day": due_day, "started_period": str(profile.started_period)},
+        )
+        return profile
+
+    def generate_associado_invite(
+        self, *, user: User, actor_id: str | None = None
+    ) -> AssociadoInvite:
+        if PlanCode.ASSOCIADO not in eligible_plans_for(user.posto_graduacao):
+            raise BusinessRuleError(
+                "Este posto não é elegível para o Associado.", code="ineligible_rank"
+            )
+        existing = self.profiles.profile_for_user(user.pk)
+        if existing is not None and existing.is_active:
+            raise BusinessRuleError(
+                "Usuário já está na relação financeira.", code="already_active"
+            )
+        invite = self.invites.create(user_id=user.pk)
+        audit.record(
+            action="finance.associado_invite_generated",
+            entity_type="AssociadoInvite",
+            entity_id=invite.id,
+            actor_id=actor_id,
+        )
+        return invite
+
+    def list_pending_associado_invites(self):
+        return self.invites.pending()
+
+    @transaction.atomic
+    def accept_associado_invite(self, *, token: str, actor: User) -> BillingProfile:
+        invite = self.invites.get_by_token(token)
+        if invite is None:
+            raise BusinessRuleError("Convite não encontrado.", code="invite_not_found")
+        if invite.user_id != actor.pk:
+            raise BusinessRuleError("Este convite não é seu.", code="forbidden")
+        if invite.used_at is not None:
+            raise BusinessRuleError("Este convite já foi usado.", code="invite_already_used")
+        if timezone.now() > invite.expires_at:
+            raise BusinessRuleError("Este convite expirou.", code="invite_expired")
+
+        today = timezone.localdate()
+        profile = self.activate_billing(
+            user=actor,
+            plan=PlanCode.ASSOCIADO,
+            due_day=today.day,
+            started_period=_first_of_month(today),
+            actor_id=str(actor.pk),
+        )
+        invite.used_at = timezone.now()
+        invite.save(update_fields=["used_at", "updated_at"])
+        audit.record(
+            action="finance.associado_invite_accepted",
+            entity_type="AssociadoInvite",
+            entity_id=invite.id,
+            actor_id=str(actor.pk),
         )
         return profile
 

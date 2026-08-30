@@ -8,7 +8,7 @@ from apps.accounts.models import User
 from apps.payments.models import PaymentMethod
 from core.context import get_current_tenant_id
 
-from ..models import BillingProfile, Due, PlanCode
+from ..models import AssociadoInvite, BillingProfile, Due, PlanCode
 
 
 def _tenant_users_queryset():
@@ -56,6 +56,23 @@ class ActivateBillingSerializer(serializers.Serializer):
 
 class UpdateDueDaySerializer(serializers.Serializer):
     due_day = serializers.IntegerField(min_value=1, max_value=31)
+
+
+class AssociadoInviteSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source="user.display_name", read_only=True)
+
+    class Meta:
+        model = AssociadoInvite
+        fields = ["id", "user", "user_name", "token", "expires_at", "used_at", "created_at"]
+        read_only_fields = fields
+
+
+class GenerateInviteSerializer(serializers.Serializer):
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.none())
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["user"].queryset = _tenant_users_queryset()  # type: ignore[attr-defined]
 
 
 class DueSerializer(serializers.ModelSerializer):
