@@ -40,3 +40,11 @@ Thumbs.db
 
 # Referência local do template Tabler (usamos @tabler/core via npm)
 tabler-dev/
+
+# Dumps do banco: contêm dado pessoal de gente real (CPF, e-mail, telefone).
+# Nunca versionar — guarde fora da máquina, não no repositório.
+backups/
+*.sql.gz
+
+# Instrucoes e skills locais do Claude Code: ficam na maquina, nao no repositorio.
+.claude/
